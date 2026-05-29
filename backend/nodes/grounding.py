@@ -7,6 +7,7 @@ from tavily import AsyncTavilyClient
 from ..classes import InputState, ResearchState
 from ..classes.state import job_status
 from ..utils.url_filters import is_low_value_url
+from ..services.scrape_engine import crawl_site
 
 logger = logging.getLogger(__name__)
 
@@ -64,26 +65,70 @@ class GroundingNode:
             yield event
 
             try:
-                logger.info("Initiating Tavily crawl")
-                site_extraction = await self.tavily_client.crawl(
-                    url=url, 
-                    instructions="Find any pages that will help us understand the company's business, products, services, and any other relevant information.",
-                    max_depth=1, 
-                    max_breadth=50, 
-                    extract_depth="advanced"
-                )
-                
-                site_scrape = {}
-                for item in site_extraction.get("results", []):
-                    if item.get("raw_content"):
-                        page_url = item.get("url", url)
-                        if is_low_value_url(page_url):
-                            logger.info(f"Skipping low-value crawled page: {page_url}")
-                            continue
-                        site_scrape[page_url] = {
-                            'raw_content': item.get('raw_content'),
-                            'source': 'company_website'
-                        }
+                # Strategy 1: Custom multi-strategy scraper
+                logger.info("Initiating custom scrape engine crawl")
+                self._emit_event(job_id, {
+                    "type": "llm_status",
+                    "used": False,
+                    "stage": "grounding_custom_scrape",
+                    "message": "🤖 LLM状态: 官网自研爬取阶段未调用LLM"
+                })
+                site_scrape = await crawl_site(url, max_pages=50, max_depth=1)
+
+                # Filter out low-value URLs
+                site_scrape = {
+                    page_url: data
+                    for page_url, data in site_scrape.items()
+                    if not is_low_value_url(page_url)
+                }
+
+                if site_scrape:
+                    logger.info(f"Custom scraper: {len(site_scrape)} pages extracted")
+                    msg += f"\n✅ Custom scraper extracted {len(site_scrape)} pages"
+                    self._emit_event(job_id, {
+                        "type": "scrape_source",
+                        "source": "custom",
+                        "count": len(site_scrape),
+                        "message": f"自研爬取: {len(site_scrape)} 页"
+                    })
+                else:
+                    # Strategy 2: Tavily as fallback
+                    logger.info("Custom scraper returned empty, falling back to Tavily crawl")
+                    self._emit_event(job_id, {
+                        "type": "scrape_source",
+                        "source": "tavily",
+                        "count": 0,
+                        "message": "自研抓取无结果，切换 Tavily 兜底爬取..."
+                    })
+                    site_extraction = await self.tavily_client.crawl(
+                        url=url, 
+                        instructions="Find any pages that will help us understand the company's business, products, services, and any other relevant information.",
+                        max_depth=1, 
+                        max_breadth=50, 
+                        extract_depth="advanced"
+                    )
+                    
+                    site_scrape = {}
+                    for item in site_extraction.get("results", []):
+                        if item.get("raw_content"):
+                            page_url = item.get("url", url)
+                            if is_low_value_url(page_url):
+                                logger.info(f"Skipping low-value crawled page: {page_url}")
+                                continue
+                            site_scrape[page_url] = {
+                                'raw_content': item.get('raw_content'),
+                                'source': 'company_website'
+                            }
+                    
+                    if site_scrape:
+                        logger.info(f"Tavily fallback: {len(site_scrape)} pages crawled")
+                        msg += f"\n✅ Tavily fallback crawled {len(site_scrape)} pages"
+                        self._emit_event(job_id, {
+                            "type": "scrape_source",
+                            "source": "tavily",
+                            "count": len(site_scrape),
+                            "message": f"Tavily 兜底爬取: {len(site_scrape)} 页"
+                        })
                 
                 if site_scrape:
                     logger.info(f"Successfully crawled {len(site_scrape)} pages from website")

@@ -64,7 +64,11 @@ class BaseResearcher:
             
             # Create prompt template using LangChain
             query_prompt = ChatPromptTemplate.from_messages([
-                ("system", "You are researching {company}, a company in the {industry} industry, headquartered in {hq_location}."),
+                ("system", """You are researching {company}, a company in the {industry} industry, headquartered in {hq_location}.
+
+【Seller Context】You are conducting this research on behalf of LoctekMotion (乐歌股份, www.loctekmotion.com), a Chinese ergonomic lifting product manufacturer.
+LoctekMotion's product categories: Standing Desk, TV Mount, Electric Sofa, Electric Bed, Chair, Monitor Stand, Lifting Platform, Fitness Equipment, Meeting Pod.
+Your research goal: Identify whether {company}'s audience has a real need for any of these products, find sales channels, discover pain points, and uncover promotion opportunities for LoctekMotion to sell TO or THROUGH {company}."""),
                 ("user", """Researching {company} in {year}, as of {date}.
 {task_prompt}
 {format_guidelines}""")
@@ -78,6 +82,12 @@ class BaseResearcher:
             current_query_number = 1
 
             # Stream queries using LangChain's astream
+            if job_id and job_id in job_status:
+                job_status[job_id]["events"].append({
+                    "type": "llm_call",
+                    "purpose": f"{self.analyst_type} 查询生成",
+                    "message": f"🤖 LLM调用: 生成 {self.analyst_type} 搜索查询"
+                })
             async for chunk in chain.astream({
                 "company": company,
                 "industry": industry,
@@ -217,6 +227,13 @@ class BaseResearcher:
 
         # Execute all searches in parallel
         search_params = self._get_search_params()
+        job_id = state.get('job_id')
+        if job_id and job_id in job_status:
+            job_status[job_id]["events"].append({
+                "type": "tavily_search",
+                "count": len(queries),
+                "message": f"📡 Tavily搜索: {len(queries)} 条查询"
+            })
         search_tasks = [self.tavily_client.search(query, **search_params) for query in queries]
 
         try:

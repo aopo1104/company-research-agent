@@ -17,6 +17,7 @@ from backend.graph import Graph
 from backend.services.mongodb import MongoDBService
 from backend.services.pdf_service import PDFService
 from backend.classes.state import job_status
+from backend.prompt_templates import EMAIL_GENERATION_SYSTEM_PROMPT, QUICK_RESEARCH_SYSTEM_PROMPT
 
 # Load environment variables from .env file at startup
 env_path = Path(__file__).parent / '.env'
@@ -104,6 +105,87 @@ async def research(data: ResearchRequest):
     except Exception as e:
         logger.error(f"Error initiating research: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/research-quick")
+async def research_quick(data: ResearchRequest):
+    """Quick research: single Tavily search + single LLM call for fast results."""
+    from langchain_openai import AzureChatOpenAI
+    from tavily import AsyncTavilyClient
+
+    try:
+        azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        azure_instance = os.getenv("AZURE_OPENAI_API_INSTANCE_NAME")
+        azure_deployment = os.getenv("AZURE_OPENAI_API_DEPLOYMENT_NAME")
+        azure_version = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+        tavily_key = os.getenv("TAVILY_API_KEY")
+
+        if not azure_api_key or not azure_instance or not azure_deployment:
+            raise HTTPException(status_code=500, detail="Missing Azure OpenAI config")
+        if not tavily_key:
+            raise HTTPException(status_code=500, detail="Missing Tavily API key")
+
+        # Step 1: Tavily searches combining all research angles
+        tavily_client = AsyncTavilyClient(api_key=tavily_key)
+
+        search_queries = [
+            f"{data.company} products services overview",
+            f"{data.company} company news partnerships",
+            f"{data.company} suppliers procurement import China",
+        ]
+        if data.company_url:
+            search_queries.append(f"site:{data.company_url.replace('https://', '').replace('http://', '')}")
+
+        # Run searches in parallel
+        search_tasks = [
+            tavily_client.search(query=q, max_results=5, include_raw_content=False)
+            for q in search_queries
+        ]
+        search_results = await asyncio.gather(*search_tasks, return_exceptions=True)
+
+        # Combine all results
+        combined_content = []
+        for result in search_results:
+            if isinstance(result, Exception):
+                continue
+            for item in result.get("results", []):
+                combined_content.append(f"[Source: {item.get('url', 'N/A')}]\nTitle: {item.get('title', '')}\n{item.get('content', '')}")
+
+        search_context = "\n\n---\n\n".join(combined_content[:15])
+
+        # Step 2: Single LLM call to generate full report
+        llm = AzureChatOpenAI(
+            azure_endpoint=f"https://{azure_instance}.openai.azure.com",
+            azure_deployment=azure_deployment,
+            api_version=azure_version,
+            api_key=azure_api_key,
+            temperature=0.3,
+        )
+
+        system_prompt = QUICK_RESEARCH_SYSTEM_PROMPT
+
+        company_info = f"Company: {data.company}"
+        if data.company_url:
+            company_info += f"\nURL: {data.company_url}"
+        if data.industry:
+            company_info += f"\nIndustry: {data.industry}"
+        if data.hq_location:
+            company_info += f"\nHQ: {data.hq_location}"
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"{company_info}\n\nSearch Results:\n{search_context}"}
+        ]
+
+        result = await llm.ainvoke(messages)
+        report = result.content
+
+        return JSONResponse(content={"report": report, "mode": "quick"})
+
+    except Exception as e:
+        logger.error(f"Quick research failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 async def process_research(job_id: str, data: ResearchRequest):
     """Process research request asynchronously and store results"""
@@ -312,6 +394,112 @@ async def generate_pdf(data: PDFGenerationRequest):
             raise HTTPException(status_code=500, detail=result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+class EmailGenerationRequest(BaseModel):
+    report_content: str
+    company_name: str | None = None
+
+
+@app.post("/generate-email")
+async def generate_email(data: EmailGenerationRequest):
+    """Generate a B2B outreach email based on research report."""
+    from langchain_openai import AzureChatOpenAI
+    from langchain_core.output_parsers import StrOutputParser
+
+    try:
+        azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        azure_instance = os.getenv("AZURE_OPENAI_API_INSTANCE_NAME")
+        azure_deployment = os.getenv("AZURE_OPENAI_API_DEPLOYMENT_NAME")
+        azure_version = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+
+        if not azure_api_key or not azure_instance or not azure_deployment:
+            raise HTTPException(status_code=500, detail="Missing Azure OpenAI config")
+
+        llm = AzureChatOpenAI(
+            azure_endpoint=f"https://{azure_instance}.openai.azure.com",
+            azure_deployment=azure_deployment,
+            api_version=azure_version,
+            api_key=azure_api_key,
+            temperature=0.7,
+        )
+
+        system_prompt = EMAIL_GENERATION_SYSTEM_PROMPT
+
+        user_message = f"Based on the following research report about {data.company_name or 'the target company'}, generate a personalized B2B outreach email.\n\nResearch Report:\n{data.report_content[:8000]}"
+
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message}
+        ]
+
+        result = await llm.ainvoke(messages)
+        result_text = result.content
+
+        # Parse JSON from response
+        import re
+        json_match = re.search(r'\{[\s\S]*\}', result_text)
+        if json_match:
+            email_data = json.loads(json_match.group())
+            return JSONResponse(content=email_data)
+        else:
+            raise ValueError("LLM did not return valid JSON")
+
+    except json.JSONDecodeError as e:
+        logger.error(f"Email generation JSON parse failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to parse email response")
+    except Exception as e:
+        logger.error(f"Email generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class TranslateRequest(BaseModel):
+    content: str
+    target_language: str = "zh"
+
+
+@app.post("/translate")
+async def translate_report(data: TranslateRequest):
+    """Translate report content to the target language using Azure OpenAI."""
+    from langchain_openai import AzureChatOpenAI
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.output_parsers import StrOutputParser
+
+    try:
+        azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
+        azure_instance = os.getenv("AZURE_OPENAI_API_INSTANCE_NAME")
+        azure_deployment = os.getenv("AZURE_OPENAI_API_DEPLOYMENT_NAME")
+        azure_version = os.getenv("AZURE_OPENAI_API_VERSION", "2025-01-01-preview")
+
+        if not azure_api_key or not azure_instance or not azure_deployment:
+            raise HTTPException(status_code=500, detail="Missing Azure OpenAI config")
+
+        llm = AzureChatOpenAI(
+            azure_endpoint=f"https://{azure_instance}.openai.azure.com",
+            azure_deployment=azure_deployment,
+            api_version=azure_version,
+            api_key=azure_api_key,
+            temperature=0,
+        )
+
+        lang_map = {"zh": "简体中文", "en": "English", "ja": "日本語"}
+        target_name = lang_map.get(data.target_language, data.target_language)
+
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", f"You are a professional translator. Translate the following markdown report to {target_name}. "
+                       "Preserve all markdown formatting, headers, bullet points, and links. "
+                       "Only translate the text content, not URLs or proper nouns that should remain in their original form."),
+            ("user", "{content}")
+        ])
+
+        chain = prompt | llm | StrOutputParser()
+        translated = await chain.ainvoke({"content": data.content})
+
+        return JSONResponse(content={"translated": translated})
+    except Exception as e:
+        logger.error(f"Translation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

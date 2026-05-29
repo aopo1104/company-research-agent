@@ -8,6 +8,7 @@ from tavily import AsyncTavilyClient
 
 from ..classes import ResearchState
 from ..classes.state import job_status
+from ..services.scrape_engine import extract_url_content
 
 logger = logging.getLogger(__name__)
 
@@ -22,18 +23,59 @@ class Enricher:
         self.tavily_client = AsyncTavilyClient(api_key=tavily_key)
         self.batch_size = 20
 
-    async def fetch_single_content(self, url: str) -> Dict[str, str]:
-        """Fetch raw content for a single URL."""
+    async def fetch_single_content(self, url: str, job_id: str = None) -> tuple:
+        """Fetch raw content for a single URL using custom scraper, Tavily as fallback.
+        Returns (url, content, source) where source is 'custom', 'tavily', or 'failed'."""
+        def _emit(source: str, msg: str):
+            if job_id and job_id in job_status:
+                try:
+                    job_status[job_id]["events"].append({
+                        "type": "scrape_source",
+                        "source": source,
+                        "url": url,
+                        "message": msg
+                    })
+                except Exception:
+                    pass
+
+        def _emit_llm_status(msg: str):
+            if job_id and job_id in job_status:
+                try:
+                    job_status[job_id]["events"].append({
+                        "type": "llm_status",
+                        "used": False,
+                        "stage": "enricher_custom_scrape",
+                        "url": url,
+                        "message": msg
+                    })
+                except Exception:
+                    pass
+
+        # Try custom scraper first
+        try:
+            _emit_llm_status(f"🤖 LLM状态: 自研爬取未调用LLM ({url[:70]})")
+            content = await extract_url_content(url)
+            if content and len(content) > 50:
+                logger.debug(f"Custom scraper success for {url}")
+                _emit("custom", f"自研爬取成功: {url[:70]}")
+                return (url, content, 'custom')
+        except Exception as e:
+            logger.debug(f"Custom scraper failed for {url}: {e}")
+
+        # Fallback to Tavily extract
         try:
             result = await self.tavily_client.extract(url)
             if result and result.get('results'):
-                return {url: result['results'][0].get('raw_content', '')}
+                _emit("tavily", f"Tavily 兜底: {url[:70]}")
+                return (url, result['results'][0].get('raw_content', ''), 'tavily')
         except Exception as e:
-            logger.error(f"Error fetching raw content for {url}: {e}")
-            return {url: ''}
-        return {url: ''}
+            logger.error(f"Tavily extract fallback failed for {url}: {e}")
+            _emit("failed", f"全部失败: {url[:70]}")
+            return (url, '', 'failed')
+        _emit("failed", f"全部失败: {url[:70]}")
+        return (url, '', 'failed')
 
-    async def fetch_raw_content(self, urls: List[str]) -> Dict[str, str]:
+    async def fetch_raw_content(self, urls: List[str], job_id: str = None) -> Dict[str, str]:
         """Fetch raw content for multiple URLs in parallel with rate limiting."""
         raw_contents = {}
         
@@ -43,23 +85,31 @@ class Enricher:
         # Process batches with rate limiting
         semaphore = asyncio.Semaphore(3)  # Limit concurrent batches to 3
         
-        async def process_batch(batch_urls: List[str]) -> Dict[str, str]:
+        async def process_batch(batch_urls: List[str]) -> List[tuple]:
             async with semaphore:
-                tasks = [self.fetch_single_content(url) for url in batch_urls]
-                results = await asyncio.gather(*tasks)
-                
-                batch_contents = {}
-                for result in results:
-                    batch_contents.update(result)
-                return batch_contents
+                tasks = [self.fetch_single_content(url, job_id=job_id) for url in batch_urls]
+                return await asyncio.gather(*tasks)
 
         # Process all batches
         batch_results = await asyncio.gather(*[process_batch(batch) for batch in batches])
 
-        # Combine results from all batches
-        for batch_result in batch_results:
-            raw_contents.update(batch_result)
+        # Combine results from all batches, track source stats
+        custom_hits = 0
+        tavily_hits = 0
+        failed_hits = 0
+        for batch in batch_results:
+            for url, content, source in batch:
+                raw_contents[url] = content
+                if source == 'custom':
+                    custom_hits += 1
+                elif source == 'tavily':
+                    tavily_hits += 1
+                else:
+                    failed_hits += 1
 
+        logger.info(
+            f"[Enricher] 抓取统计: 自研成功={custom_hits}, Tavily兜底={tavily_hits}, 失败={failed_hits}, 总计={len(urls)}"
+        )
         return raw_contents
 
     async def enrich_data(self, state: ResearchState) -> ResearchState:
@@ -124,7 +174,7 @@ class Enricher:
         if enrichment_tasks:
             async def process_category(task):
                 try:
-                    raw_contents = await self.fetch_raw_content(list(task['docs'].keys()))
+                    raw_contents = await self.fetch_raw_content(list(task['docs'].keys()), job_id=job_id)
                     
                     enriched_count = 0
                     for url, content in raw_contents.items():

@@ -1,0 +1,181 @@
+"""
+Briefing prompts for the four research analyst nodes.
+Each prompt generates a structured sub-report (分报告) from scraped documents.
+"""
+
+# ============================================================
+# ANTI-HALLUCINATION RULE (injected into every briefing prompt)
+# ============================================================
+_NO_HALLUCINATION = """
+⚠️ 准确性要求：
+- 基于下方文档内容输出，每条信息尽量附 [来源](url) 引用。
+- 不要捏造文档中不存在的事实（如虚构的发布会、合作协议、未来计划）。
+- 不要把行业通用数据（市场规模等）说成是 {company} 的数据。
+- 不要把其他公司的信息张冠李戴到 {company} 头上。
+- 严禁捏造具体数字（金额、百分比、年份、增长率），除非文档中有原文。
+- 文档有什么就写什么，有多少写多少，尽量全面丰富地提取有价值信息。
+"""
+
+COMPANY_BRIEFING_PROMPT = """Create a focused, yet comprehensive company briefing for {company}, a {industry} company based in {hq_location}.
+Key requirements:
+1. Start with: "{company} is a [what] that [does what] for [whom]"
+2. Output the entire briefing in Chinese (简体中文). All content must be written in Chinese.
+3. Structure using these headers and bullet points:
+
+### 核心产品/服务
+* List distinct products/features with pricing info
+* Include product positioning and target pain points solved
+* Highlight flagship/hero products most suitable for promotion
+
+### 企业性质与自产能力
+* Clarify if the company is a manufacturer, distributor, reseller, or hybrid
+* List which products they manufacture/produce in-house (own factory, own brand production)
+* List which products they source/resell from other brands
+* Note any OEM/ODM capabilities or factory information
+* Identify if they have their own production facilities and where
+
+### 目标市场与用户痛点
+* List specific target audiences and their key pain points
+* List verified use cases and customer scenarios
+* Identify unmet needs or underserved segments
+
+### 产品差异化优势
+* List unique selling propositions (USPs) vs competitors
+* List proven advantages that resonate with buyers
+* Highlight features that solve specific pain points
+
+### 销售渠道与购买链接
+* List all sales channels (official website, e-commerce platforms, partner stores)
+* Include direct purchase links/URLs for each channel
+* List authorized resellers and distributors
+* Note which channels offer best deals or promotions
+
+### 采购渠道与中国采购记录
+* Identify known procurement/sourcing channels and supplier relationships ONLY if explicitly mentioned in documents
+* Note any evidence of importing from China (Chinese suppliers, Made in China products, trade records) ONLY if documents contain explicit evidence
+* List import/export data if available (customs records, trade databases)
+* Identify which product categories they source internationally
+* ⚠️ CRITICAL: This section requires HARD EVIDENCE from documents (e.g. customs records, supplier pages, import databases, trade show attendance). Do NOT fabricate procurement data. If no sourcing evidence exists in the documents, write: "* 在现有资料中未找到明确的采购渠道或中国采购记录"
+
+### 推广机会分析
+* Identify products with highest promotion potential (high margin, strong demand, unique value)
+* List current promotional activities or campaigns
+* Suggest promotion angles based on product strengths and market pain points
+* Recommend target audience segments for promotion
+* Note seasonal or trending opportunities
+
+4. Each bullet must be a single, complete fact
+5. No paragraphs, only bullet points
+6. Provide only the briefing. No explanations or commentary.
+7. IMPORTANT: After each fact/sentence, add an inline citation linking to the source URL in the format [来源](url). Use the Source URL provided with each document. Example: * 该公司成立于2020年 [来源](https://example.com/about)
+""" + _NO_HALLUCINATION
+
+
+INDUSTRY_BRIEFING_PROMPT = """Create a focused, yet comprehensive industry briefing for {company}, a {industry} company based in {hq_location}.
+Key requirements:
+1. Output the entire briefing in Chinese (简体中文). All content must be written in Chinese.
+2. Structure using these exact headers and bullet points:
+
+### 市场概况与规模
+* State {company}'s exact market segment
+* List market size with year
+* List growth rate with year range
+* Identify fastest-growing sub-segments
+
+### 行业痛点与未满足需求
+* List key pain points that customers in this industry face
+* Identify gaps in current market offerings
+* Note emerging demands or shifts in buyer behavior
+* Highlight opportunities where {company}'s products can fill gaps
+
+### 竞争格局
+* List named direct competitors and their key products
+* Compare pricing strategies across competitors
+* Identify competitor weaknesses that create promotion opportunities
+* Note market positioning gaps
+
+### 推广趋势与渠道洞察
+* List effective marketing/promotion channels in this industry
+* Note successful promotion strategies used by competitors
+* Identify trending topics or content angles for promotion
+* Suggest timing and seasonal factors for campaigns
+
+3. Each bullet must be a single, complete fact.
+4. No paragraphs, only bullet points
+5. If a section has no supporting evidence in the documents, write "* 在现有资料中未找到相关信息" for that section.
+6. Provide only the briefing. No explanation.
+7. IMPORTANT: After each fact/sentence, add an inline citation linking to the source URL in the format [来源](url). Use the Source URL provided with each document. Example: * 市场规模达100亿美元 [来源](https://example.com/report)
+""" + _NO_HALLUCINATION
+
+
+FINANCIAL_BRIEFING_PROMPT = """Create a focused, yet comprehensive financial briefing for {company}, a {industry} company based in {hq_location}.
+Key requirements:
+1. Output the entire briefing in Chinese (简体中文). All content must be written in Chinese.
+2. Structure using these headers and bullet points:
+
+### 融资与投资
+* Total funding amount with date
+* List each funding round with date
+* List named investors
+
+### 营收模式与定价
+* Discuss product/service pricing tiers and strategies
+* Identify high-margin products suitable for promotion
+* Note pricing advantages vs competitors
+
+### 供应链与采购渠道
+* List known suppliers and procurement partners ONLY if explicitly mentioned in documents
+* Note any evidence of sourcing from China (import records, Chinese manufacturers, trade data) ONLY with hard evidence
+* Identify product categories they procure internationally
+* Note trade shows attended or sourcing platforms used (e.g. Alibaba, Canton Fair, Global Sources)
+* ⚠️ CRITICAL: Do NOT fabricate procurement amounts, supplier names, or trade records. If no evidence exists, write: "* 在现有资料中未找到明确的供应链或采购信息"
+
+### 推广预算与ROI洞察
+* Note any known marketing/promotion spend
+* Identify cost-effective promotion opportunities
+* Suggest budget allocation priorities based on product margins
+
+3. Include specific numbers when possible
+4. No paragraphs, only bullet points
+5. If a section has no supporting evidence in the documents, write "* 在现有资料中未找到相关信息" for that section.
+6. NEVER repeat the same round of funding multiple times. ALWAYS assume that multiple funding rounds in the same month are the same round.
+7. NEVER include a range of funding amounts. Use your best judgement to determine the exact amount based on the information provided.
+8. Provide only the briefing. No explanation or commentary.
+9. IMPORTANT: After each fact/sentence, add an inline citation linking to the source URL in the format [来源](url). Use the Source URL provided with each document. Example: * A轮融资1000万美元 [来源](https://example.com/funding)
+""" + _NO_HALLUCINATION
+
+
+NEWS_BRIEFING_PROMPT = """Create a focused, yet comprehensive news briefing for {company}, a {industry} company based in {hq_location}.
+Key requirements:
+1. Output the entire briefing in Chinese (简体中文). All content must be written in Chinese.
+2. Structure into these categories using bullet points:
+
+### 新品发布与促销活动
+* Recent product/service launches worth promoting
+* Active promotional campaigns or limited-time offers
+* New features or upgrades that address user pain points
+
+### 合作与渠道拓展
+* New distribution partnerships
+* Platform integrations and marketplace expansions
+* Co-marketing opportunities
+
+### 市场反馈与口碑
+* Customer reviews and satisfaction signals
+* Awards, recognitions, or media coverage
+* Social media buzz and trending topics about the brand
+
+### 推广时机建议
+* Identify newsworthy events that create promotion windows
+* Note upcoming launches or events to leverage
+* Suggest content angles based on recent news
+
+3. Sort newest to oldest
+4. One event per bullet point
+5. If a section has no supporting evidence in the documents, write "* 在现有资料中未找到相关信息" for that section.
+6. Provide only the briefing. Do not provide explanations or commentary.
+7. IMPORTANT: After each fact/sentence, add an inline citation linking to the source URL in the format [来源](url). Use the Source URL provided with each document. Example: * 公司宣布新合作 [来源](https://example.com/news)
+""" + _NO_HALLUCINATION
+
+
+BRIEFING_ANALYSIS_INSTRUCTION = """Analyze the following documents and extract key information. Provide only the briefing, no explanations or commentary:"""

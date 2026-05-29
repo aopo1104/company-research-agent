@@ -126,6 +126,25 @@ def extract_website_name_from_domain(domain: str) -> str:
 def process_references_from_search_results(state: Dict[str, Any]) -> Tuple[List[str], Dict[str, str], Dict[str, Dict[str, Any]]]:
     """Process references from search results and return top references, titles, and info."""
     all_top_references = []
+    company = state.get('company', '')
+    company_url = state.get('company_url', '')
+    
+    # Build tokens for company relevance check
+    company_lower = company.lower() if company else ''
+    company_tokens = [company_lower] if company_lower else []
+    if company_lower:
+        words = [w for w in re.split(r'[\s\-&+.,]+', company_lower) if len(w) > 2]
+        company_tokens.extend(words)
+        slug = re.sub(r'[\s\-&+.,]+', '', company_lower)
+        if len(slug) > 3:
+            company_tokens.append(slug)
+    
+    company_domain = ''
+    if company_url:
+        try:
+            company_domain = urlparse(company_url).netloc.replace('www.', '')
+        except Exception:
+            pass
     
     # Collect references with scores from all data types
     data_types = ['curated_company_data', 'curated_industry_data', 'curated_financial_data', 'curated_news_data']
@@ -190,8 +209,10 @@ def process_references_from_search_results(state: Dict[str, Any]) -> Tuple[List[
             # Look for the document info in all data types
             for data_type in data_types:
                 if not title and (curated_data := state.get(data_type, {})):
-                    for doc in curated_data.values():
-                        if doc.get('url') == url:
+                    for doc_url, doc in curated_data.items():
+                        # Match by normalized URL (handle trailing slash differences)
+                        doc_url_normalized = normalize_url(doc_url)
+                        if doc_url_normalized == normalized_url or doc.get('url', '').rstrip('/') == url.rstrip('/'):
                             title = doc.get('title', '')
                             if title:
                                 # Clean up the title
@@ -227,8 +248,35 @@ def process_references_from_search_results(state: Dict[str, Any]) -> Tuple[List[
     for i, (url, score) in enumerate(unique_references):
         logger.info(f"{i+1}. Score: {score:.4f} - URL: {url}")
     
+    # Filter: prioritize references that are actually about the target company
+    # Split into company-relevant and general references
+    company_relevant_refs = []
+    general_refs = []
+    for url, score in unique_references:
+        url_lower = url.lower()
+        title_lower = (reference_info.get(url, {}).get('title', '') or '').lower()
+        is_relevant = False
+        # Check if URL is from company domain
+        if company_domain:
+            doc_domain = urlparse(url).netloc.replace('www.', '')
+            if company_domain in doc_domain:
+                is_relevant = True
+        # Check if company name tokens appear in URL or title
+        if not is_relevant:
+            for token in company_tokens:
+                if token in url_lower or token in title_lower:
+                    is_relevant = True
+                    break
+        if is_relevant:
+            company_relevant_refs.append((url, score))
+        else:
+            general_refs.append((url, score))
+    
+    # Take company-relevant first, then fill remaining slots with general
+    prioritized_refs = company_relevant_refs + general_refs
+    
     # Take exactly 10 unique references (or all if less than 10)
-    top_references = unique_references[:10]
+    top_references = prioritized_refs[:10]
     top_reference_urls = [url for url, _ in top_references]
     
     # Log final top 10 references
@@ -317,6 +365,11 @@ def format_references_section(references: List[str], reference_info: Dict[str, D
         # If title is not in reference_info, try to get it from reference_titles
         if not title or title.strip() == "":
             title = reference_titles.get(ref, '')
+            # Also try without trailing slash / with trailing slash
+            if not title:
+                title = reference_titles.get(ref.rstrip('/'), '')
+            if not title:
+                title = reference_titles.get(ref + '/', '')
             logger.info(f"Using title from reference_titles for {ref}: '{title}'")
         
         domain = info.get('domain', '')

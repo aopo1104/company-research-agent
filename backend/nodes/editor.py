@@ -130,7 +130,7 @@ class Editor:
 
             # Step 2 & 3: Content sweep and streaming
             final_report = ""
-            async for event in self.content_sweep(edited_report):
+            async for event in self.content_sweep(edited_report, job_id=job_id):
                 # Forward streaming events to job_status
                 if isinstance(event, dict) and job_id:
                     try:
@@ -185,6 +185,13 @@ class Editor:
         chain = compile_prompt | self.llm | StrOutputParser()
         
         try:
+            job_id = state.get('job_id')
+            if job_id and job_id in job_status:
+                job_status[job_id]["events"].append({
+                    "type": "llm_call",
+                    "purpose": "报告汇编",
+                    "message": "🤖 LLM调用: 汇编最终报告"
+                })
             initial_report = await chain.ainvoke({
                 "company": self.context["company"],
                 "industry": self.context["industry"],
@@ -201,7 +208,7 @@ class Editor:
             logger.error(f"Error in initial compilation: {e}")
             raise RuntimeError(f"[editor] Error in initial compilation: {e}") from e
         
-    async def content_sweep(self, content: str):
+    async def content_sweep(self, content: str, job_id: str = None):
         """Sweep the content for any redundant information using LCEL streaming and yield events."""
         # Create LCEL chain for content sweep
         sweep_prompt = ChatPromptTemplate.from_messages([
@@ -212,6 +219,12 @@ class Editor:
         chain = sweep_prompt | self.llm | StrOutputParser()
         
         try:
+            if job_id and job_id in job_status:
+                job_status[job_id]["events"].append({
+                    "type": "llm_call",
+                    "purpose": "报告精绣格式化",
+                    "message": "🤖 LLM调用: 报告精绣格式化"
+                })
             accumulated_text = ""
             buffer = ""
             

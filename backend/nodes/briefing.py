@@ -60,24 +60,28 @@ class Briefing:
             (doc.get('url', f'doc_{i}'), doc) for i, doc in enumerate(docs)
         ]
         
-        # Sort by evaluation score
+        # Sort: company website pages first (most valuable first-party data), then by score
         sorted_items = sorted(
             items, 
-            key=lambda x: float(x[1].get('evaluation', {}).get('overall_score', '0')), 
+            key=lambda x: (
+                1 if x[1].get('source') == 'company_website' else 0,
+                float(x[1].get('evaluation', {}).get('overall_score', '0'))
+            ),
             reverse=True
         )
         
         # Format documents with length limits
         doc_texts = []
         total_length = 0
-        for _, doc in sorted_items:
+        for url, doc in sorted_items:
             title = doc.get('title', '')
+            source_url = doc.get('url', url) if isinstance(doc, dict) else url
             content = doc.get('raw_content') or doc.get('content', '')
             
             if len(content) > self.max_doc_length:
                 content = content[:self.max_doc_length] + "... [content truncated]"
             
-            doc_entry = f"Title: {title}\n\nContent: {content}"
+            doc_entry = f"Source URL: {source_url}\nTitle: {title}\n\nContent: {content}"
             if total_length + len(doc_entry) < 120000:  # Keep under limit
                 doc_texts.append(doc_entry)
                 total_length += len(doc_entry)
@@ -134,6 +138,12 @@ class Briefing:
         chain = briefing_prompt | self.llm | StrOutputParser()
         
         try:
+            if job_id and job_id in job_status:
+                job_status[job_id]["events"].append({
+                    "type": "llm_call",
+                    "purpose": f"{category} 摘要生成",
+                    "message": f"🤖 LLM调用: 生成 {category} 摘要"
+                })
             logger.info("Sending prompt to LLM")
             content = await chain.ainvoke({
                 "category_prompt": category_prompt,
@@ -152,11 +162,12 @@ class Briefing:
                 yield {'content': ''}
                 return
 
-            # Emit completion event
+            # Emit completion event with content
             event = {
                 "type": "briefing_complete",
                 "category": category,
                 "content_length": len(content),
+                "content": content.strip(),
                 "step": "Briefing"
             }
             

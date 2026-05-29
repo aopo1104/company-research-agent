@@ -1,63 +1,29 @@
-import { Github } from 'lucide-react';
+import { Target } from 'lucide-react';
 
 interface HeaderProps {
   glassStyle: string;
 }
 
 const Header = ({ glassStyle }: HeaderProps) => {
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-    e.currentTarget.style.display = 'none';
-  };
-
   return (
-    <div className="relative mb-16">
-      <div className="text-center pt-4">
-        <h1 className="text-[48px] font-medium text-[#1a202c] font-['DM_Sans'] tracking-[-1px] leading-[52px] text-center mx-auto antialiased">
-          Company Research Agent
-        </h1>
-        <p className="text-gray-600 text-lg font-['DM_Sans'] mt-4">
-          Conduct in-depth company diligence powered by Tavily
-        </p>
-      </div>
-      <div className="absolute top-0 right-0 flex items-center space-x-2">
-        <a
-          href="https://tavily.com"
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`text-gray-600 hover:text-gray-900 transition-colors ${glassStyle} rounded-lg flex items-center justify-center`}
-          style={{ width: '50px', height: '50px', padding: '2px' }}
-          aria-label="Tavily Website"
-        >
-          <img 
-            src="/tavilylogo.png" 
-            alt="Tavily Logo" 
-            className="w-full h-full object-contain" 
-            style={{ 
-              width: '45px', 
-              height: '45px',
-              display: 'block',
-              margin: 'auto'
-            }}
-            onError={handleImageError}
-          />
-        </a>
-        <a
-          href="https://github.com/guy-hartstein/company-research-agent"
-          target="_blank"
-          rel="noopener noreferrer"
-          className={`text-gray-600 hover:text-gray-900 transition-colors ${glassStyle} rounded-lg flex items-center justify-center`}
-          style={{ width: '40px', height: '40px', padding: '8px' }}
-          aria-label="GitHub Profile"
-        >
-          <Github 
-            style={{ 
-              width: '24px', 
-              height: '24px',
-              display: 'block',
-              margin: 'auto'
-            }} 
-          />
-        </a>
+    <div className="relative mb-8">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#468BFF] to-[#2563eb] flex items-center justify-center shadow-md">
+            <Target className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 font-['DM_Sans'] tracking-tight">
+              LoctekMotion 推广研究平台
+            </h1>
+            <p className="text-xs text-gray-500 font-['DM_Sans']">
+              目标客户分析 → 推广策略 → 开发信生成
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-gray-400">
+          <span className="px-2 py-1 bg-gray-100 rounded text-gray-500">Powered by Azure OpenAI + Tavily</span>
+        </div>
       </div>
     </div>
   );

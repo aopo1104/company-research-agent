@@ -2,14 +2,15 @@
 
 ## 📋 目录
 1. [整体架构](#整体架构)
-2. [阶段1: 官网抓取 (Grounding)](#阶段1-官网抓取-grounding)
-3. [阶段2: 搜索查询生成 (Query Generation)](#阶段2-搜索查询生成-query-generation)
-4. [阶段3: 文档搜集 (Parallel Search)](#阶段3-文档搜集-parallel-search)
-5. [阶段4: 数据汇总 (Collection)](#阶段4-数据汇总-collection)
-6. [阶段5: 内容筛选 (Curation)](#阶段5-内容筛选-curation)
-7. [阶段6: 内容充实 (Enrichment)](#阶段6-内容充实-enrichment)
-8. [阶段7: 简报生成 (Briefing)](#阶段7-简报生成-briefing)
-9. [阶段8: 报告编译 (Editor)](#阶段8-报告编译-editor)
+2. [技术栈](#技术栈)
+3. [阶段1: 官网抓取 (Grounding)](#阶段1-官网抓取-grounding)
+4. [阶段2: 搜索查询生成 (Query Generation)](#阶段2-搜索查询生成-query-generation)
+5. [阶段3: 文档搜集 (Parallel Search)](#阶段3-文档搜集-parallel-search)
+6. [阶段4: 数据汇总 (Collection)](#阶段4-数据汇总-collection)
+7. [阶段5: 内容筛选 (Curation)](#阶段5-内容筛选-curation)
+8. [阶段6: 内容充实 (Enrichment)](#阶段6-内容充实-enrichment)
+9. [阶段7: 简报生成 (Briefing)](#阶段7-简报生成-briefing)
+10. [阶段8: 报告编译 (Editor)](#阶段8-报告编译-editor)
 
 ---
 
@@ -21,56 +22,56 @@
 └────────────────────┬─────────────────────────────────────────┘
                      │
                      ▼
-        ┌────────────────────────┐
-        │  Grounding Node        │  ← 阶段1: 官网抓取
-        │  (grounding.py)        │
-        └────────┬───────────────┘
+        ┌─────────────────────────────┐
+        │  Grounding Node             │  ← 阶段1: 官网抓取
+        │  (grounding.py)             │     自研爬虫(httpx+BS4) → Tavily兜底
+        └────────┬────────────────────┘
                  │ [官网raw_content]
                  ▼
     ┌─────────────────────────────────────────┐
-    │ 4个研究节点并行运行                       │  ← 阶段2-3: 搜索+收集
+    │ 4个研究节点并行运行 (LangGraph fan-out)  │  ← 阶段2-3: 查询生成+搜索
     ├─────────────────────────────────────────┤
-    │ ① CompanyAnalyzer  (company.py)        │   生成4条查询
-    │    └─ 搜索: 产品、历史、团队、战略       │   ← Tavily搜索
+    │ ① CompanyAnalyzer  (company.py)        │   Azure GPT-4o生成4条查询
+    │    └─ 搜索: 产品、历史、团队、战略       │   ← Tavily Search API
     │                                         │
-    │ ② IndustryAnalyzer  (industry.py)      │   生成4条查询
-    │    └─ 搜索: 市场、竞争、趋势、挑战      │   ← Tavily搜索
+    │ ② IndustryAnalyzer  (industry.py)      │   Azure GPT-4o生成4条查询
+    │    └─ 搜索: 市场、竞争、趋势、挑战      │   ← Tavily Search API
     │                                         │
-    │ ③ FinancialAnalyst  (financial.py)     │   生成4条查询
-    │    └─ 搜索: 融资、估值、收入、利润      │   ← Tavily搜索
+    │ ③ FinancialAnalyst  (financial.py)     │   Azure GPT-4o生成4条查询
+    │    └─ 搜索: 融资、估值、收入、利润      │   ← Tavily Search API (topic=finance)
     │                                         │
-    │ ④ NewsScanner  (news.py)               │   生成4条查询
-    │    └─ 搜索: 公告、合作、奖项、新闻      │   ← Tavily搜索
+    │ ④ NewsScanner  (news.py)               │   Azure GPT-4o生成4条查询
+    │    └─ 搜索: 公告、合作、奖项、新闻      │   ← Tavily Search API (topic=news)
     └────────┬──────────────────────────────┘
              │ [4类别各多个文档]
              ▼
     ┌────────────────────┐
     │ Collector          │  ← 阶段4: 汇总统计
-    │ (collector.py)     │
+    │ (collector.py)     │     纯逻辑，无API调用
     └────────┬───────────┘
              │ [统计信息]
              ▼
-    ┌────────────────────┐
-    │ Curator            │  ← 阶段5: 评分筛选
-    │ (curator.py)       │     (Tavily score ≥ 0.4)
-    └────────┬───────────┘
-             │ [筛选后的文档]
+    ┌─────────────────────────┐
+    │ Curator                  │  ← 阶段5: 评分筛选+引用收集
+    │ (curator.py)             │     Tavily score ≥ 0.4 或 官网来源
+    └────────┬────────────────┘     每类别最多保留Top 30
+             │ [筛选后的文档 + references]
              ▼
-    ┌────────────────────┐
-    │ Enricher           │  ← 阶段6: 获取完整内容
-    │ (enricher.py)      │     (Tavily extract)
-    └────────┬───────────┘
+    ┌─────────────────────────┐
+    │ Enricher                 │  ← 阶段6: 获取完整内容
+    │ (enricher.py)            │     自研爬虫(httpx+BS4) → Tavily extract兜底
+    └────────┬────────────────┘     分批20个，并发3批
              │ [含raw_content的文档]
              ▼
     ┌────────────────────┐
     │ Briefing           │  ← 阶段7: 生成4份简报
-    │ (briefing.py)      │     (Azure GPT-4o)
+    │ (briefing.py)      │     Azure GPT-4o (中文输出)
     └────────┬───────────┘
              │ [4个类别的简报]
              ▼
     ┌────────────────────┐
-    │ Editor             │  ← 阶段8: 汇编+清理
-    │ (editor.py)        │     (Azure GPT-4o)
+    │ Editor             │  ← 阶段8: 汇编+清理 (2阶段)
+    │ (editor.py)        │     Azure GPT-4o (流式输出)
     └────────┬───────────┘
              │
              ▼
@@ -82,45 +83,110 @@
 
 ---
 
+## 技术栈
+
+| 组件 | 技术 | 用途 |
+|------|------|------|
+| **后端框架** | FastAPI + Uvicorn | REST API + 异步处理 |
+| **工作流引擎** | LangGraph (StateGraph) | 节点编排、并行分支 |
+| **LLM** | Azure OpenAI GPT-4o | 查询生成、简报生成、报告编译 |
+| **搜索引擎** | Tavily Search API | 信息检索 + 相关性评分 |
+| **网页抓取 (主)** | httpx + BeautifulSoup4 | 自研多策略爬虫 |
+| **网页抓取 (备)** | Tavily Crawl/Extract | 自研爬虫失败时的兜底方案 |
+| **前端** | React + Vite + TypeScript | 实时进度展示 |
+| **数据库** | MongoDB (可选) | 研究结果持久化 |
+| **PDF生成** | ReportLab | 报告导出为PDF |
+
+### 环境变量
+
+```bash
+TAVILY_API_KEY=            # Tavily搜索和爬取
+AZURE_OPENAI_API_KEY=      # Azure OpenAI API密钥
+AZURE_OPENAI_API_INSTANCE_NAME=   # Azure实例名
+AZURE_OPENAI_API_DEPLOYMENT_NAME= # 部署名(如gpt-4o)
+AZURE_OPENAI_API_VERSION=  # API版本(默认2025-01-01-preview)
+MONGODB_URI=               # MongoDB连接(可选)
+```
+
+---
+
 ## 阶段1: 官网抓取 (Grounding)
 
 **文件**: `backend/nodes/grounding.py`  
-**服务**: Tavily Web Crawler  
+**服务**: 自研多策略爬虫 (主) + Tavily Crawl API (兜底)  
 **输入**: 公司URL (可选)  
 **输出**: 官网页面的 raw_content
+
+### 爬取策略 (按优先级)
+
+自研爬虫 (`backend/services/scrape_engine.py`) 采用多策略尝试:
+
+```
+Strategy 1: static-html     → httpx GET + BeautifulSoup内容提取
+Strategy 2: json-ld         → 解析 script[type="application/ld+json"] 结构化数据
+Strategy 3: enhanced-static → httpx + 反爬headers (模拟浏览器)
+Fallback:   tavily-crawl    → Tavily Crawl API (自研爬虫全部失败时触发)
+```
 
 ### 工作流程
 
 ```python
-# 如果用户提供了公司官网URL
-if url := state.get('company_url'):
+# 阶段1a: 自研爬虫优先
+site_scrape = await crawl_site(url, max_pages=50, max_depth=1)
+# 内部逻辑:
+#   1. 抓取种子页面 (尝试3种策略)
+#   2. 从种子页面发现内链 (max_links=50)
+#   3. 并发抓取子页面 (semaphore=5限制并发)
+#   4. 过滤低价值URL (url_filters.py)
+
+# 阶段1b: 自研爬虫无结果时，切换Tavily兜底
+if not site_scrape:
     site_extraction = await tavily_client.crawl(
         url=url,
         instructions="Find any pages that help understand the company's 
                      business, products, services, and relevant information",
-        max_depth=1,              # 仅抓取1层深度
-        max_breadth=50,           # 最多50个页面
-        extract_depth="advanced"  # 获取完整内容
+        max_depth=1,
+        max_breadth=50,
+        extract_depth="advanced"
     )
+```
+
+### 内容净化 (Content Purification)
+
+自研爬虫抓取后，进行内容净化处理:
+
+```python
+def _purify_content(soup):
+    # 1. 移除噪声标签: script, style, nav, footer, header, iframe
+    # 2. 移除隐藏元素: display:none, hidden属性
+    # 3. 定位主内容区域: <main> > <article> > role="main" > .content/.main
+    # 4. 过滤样板文本: cookie policy, privacy policy, subscribe等
+    # 5. 截断: 最大20000字符
 ```
 
 ### 具体例子 - 男鞋电商网站
 
 **输入URL**: `https://example-men-shoes.com`
 
-**Tavily抓取过程**:
+**自研爬虫过程**:
 ```
-1. 访问首页 (https://example-men-shoes.com/)
-   └─ 识别链接: /about, /products, /services, /contact
-   
-2. 抓取关联页面 (max_breadth=50限制):
-   ✓ /about           → raw_content: "我们是中国领先的男鞋电商平台，成立于2015年..."
-   ✓ /products        → raw_content: "产品分类：跑步鞋、篮球鞋、休闲鞋..."
-   ✓ /services        → raw_content: "我们提供: 免费配送、7天退货、专业咨询..."
-   ✓ /contact         → raw_content: "服务热线：400-123-456 邮箱: support@..."
-   ✓ /company-history → raw_content: "公司历史: 2015年成立，2018年融资500万..."
-   
-3. 提取raw_content存储为:
+1. 种子页面抓取 (Strategy: static-html)
+   GET https://example-men-shoes.com/
+   └─ BeautifulSoup解析 → 提取clean text → 发现内链
+
+2. 链接发现 (从种子页面的<a>标签):
+   ✓ /about       ← 同域名
+   ✓ /products    ← 同域名  
+   ✓ /services    ← 同域名
+   ✗ https://facebook.com/... ← 外链，跳过
+   ✗ /logo.png   ← 静态资源，跳过
+
+3. 并发抓取子页面 (semaphore=5):
+   ✓ /about           → [static] 成功 (2300 chars)
+   ✓ /products        → [static] 成功 (5600 chars)
+   ✓ /services        → [json-ld] 成功 (1200 chars)
+   ✗ /contact         → [all-failed] 内容太短 (<50 chars)
+   ✓ /company-history → [enhanced-static] 成功 (3100 chars)
 ```
 
 ### 状态更新
@@ -129,49 +195,83 @@ if url := state.get('company_url'):
 state['site_scrape'] = {
     'https://example-men-shoes.com/': {
         'raw_content': '首页内容文本...',
-        'source': 'company_website'
+        'source': 'company_website',
+        'method': 'static'
     },
     'https://example-men-shoes.com/about': {
         'raw_content': '关于我们页面文本...',
-        'source': 'company_website'
+        'source': 'company_website',
+        'method': 'static'
     },
     'https://example-men-shoes.com/products': {
         'raw_content': '产品分类和描述...',
-        'source': 'company_website'
+        'source': 'company_website',
+        'method': 'static'
     }
-    # ...共可能50个页面
+    # ...最多50个页面
 }
 ```
 
 ### 输出事件
 
-前端收到的事件:
+前端收到的事件序列:
 ```javascript
-{
-  "type": "crawl_start",
-  "url": "https://example-men-shoes.com",
-  "message": "正在抓取官网..."
-}
+{ "type": "research_init", "company": "Example Shoes Inc", "step": "Initializing" }
 ↓
-{
-  "type": "crawl_success",
-  "pages_found": 5,
-  "message": "成功抓取5个页面"
-}
+{ "type": "crawl_start", "url": "https://example-men-shoes.com", "step": "Website Crawl" }
+↓
+{ "type": "scrape_source", "source": "custom", "count": 5, "message": "自研爬取: 5 页" }
+↓
+{ "type": "crawl_success", "pages_found": 5, "step": "Initial Site Scrape" }
 ```
-
 ---
 
 ## 阶段2: 搜索查询生成 (Query Generation)
 
 **文件**: `backend/nodes/researchers/base.py`  
-**服务**: Azure OpenAI GPT-4o  
+**服务**: Azure OpenAI GPT-4o (通过 LangChain AzureChatOpenAI)  
 **输入**: 公司信息 + Prompt模板  
-**输出**: 4条搜索查询
+**输出**: 每个研究节点4条搜索查询 (共16条)
 
 ### 4个研究节点的Prompt
 
-每个研究节点使用不同的Prompt，指导GPT-4o生成针对性的搜索查询。
+每个研究节点使用不同的Prompt，指导 Azure GPT-4o 生成针对性的搜索查询。
+
+#### LLM调用方式 (LCEL链)
+
+```python
+# 创建 ChatPromptTemplate
+query_prompt = ChatPromptTemplate.from_messages([
+    ("system", "You are researching {company}, a company in the {industry} industry, "
+               "headquartered in {hq_location}."),
+    ("user", """Researching {company} in {year}, as of {date}.
+{task_prompt}
+{format_guidelines}""")
+])
+
+# 创建 LCEL 链 (prompt | llm)
+chain = query_prompt | self.llm  # self.llm = AzureChatOpenAI(...)
+
+# 流式执行
+async for chunk in chain.astream({
+    "company": company,
+    "industry": industry,
+    "hq_location": hq_location,
+    "year": current_year,
+    "date": datetime.now().strftime("%B %d, %Y"),
+    "task_prompt": CATEGORY_SPECIFIC_PROMPT,
+    "format_guidelines": QUERY_FORMAT_GUIDELINES
+}):
+    current_query += chunk.content
+    # 按换行符分割查询，实时发送query_generated事件
+    if '\n' in current_query:
+        parts = current_query.split('\n')
+        for query in parts[:-1]:
+            queries.append(query.strip())
+
+# 限制最多4条查询
+queries = queries[:4]
+```
 
 #### ① 公司分析器 (CompanyAnalyzer)
 
@@ -201,27 +301,7 @@ Example Shoes Inc leadership team founders
 Example Shoes Inc business model e-commerce
 ```
 
-**工作流程**:
-```python
-chain = prompt_template | azure_llm  # LCEL链
-
-async for chunk in chain.astream({
-    "company": "Example Shoes Inc",
-    "industry": "在线零售",
-    "hq_location": "杭州",
-    "task_prompt": COMPANY_ANALYZER_QUERY_PROMPT,
-    "format_guidelines": "..."
-}):
-    # 流式接收GPT输出
-    current_query += chunk.content
-    
-    # 按行分割查询
-    if '\n' in current_query:
-        parts = current_query.split('\n')
-        for query in parts[:-1]:
-            queries.append(query.strip())
-            # 发送query_generated事件给前端
-```
+**工作流程**: 使用上述LCEL链，流式接收GPT输出并实时解析查询。
 
 #### ② 行业分析器 (IndustryAnalyzer)
 
@@ -332,21 +412,32 @@ UI中的"Generated Research Queries"展开后显示:
 ### 并行搜索过程
 
 ```python
-async def search_documents(self, state, queries):
-    search_params = {
+def _get_search_params(self) -> Dict[str, Any]:
+    """根据分析器类型获取搜索参数"""
+    params = {
         "search_depth": "basic",
         "include_raw_content": False,
         "max_results": 5,          # 每条查询最多5个结果
-        "topic": "news"            # 可选: news或finance主题
     }
     
+    # 特定分析器使用专题搜索
+    topic_map = {
+        "news_analyzer": "news",        # 新闻专题
+        "financial_analyzer": "finance"  # 财经专题
+    }
+    
+    if topic := topic_map.get(self.analyst_type):
+        params["topic"] = topic
+        
+    return params
+
+async def search_documents(self, state, queries):
     # 并行执行所有搜索任务
     search_tasks = [
-        tavily_client.search(query, **search_params) 
+        tavily_client.search(query, **self._get_search_params()) 
         for query in queries
     ]
-    
-    results = await asyncio.gather(*search_tasks)  # 并行执行
+    results = await asyncio.gather(*search_tasks)
 ```
 
 ### 具体例子
@@ -402,11 +493,18 @@ async def search_documents(self, state, queries):
 ```python
 def _process_search_result(self, result, query):
     """将Tavily结果转换为标准格式"""
+    url = result.get("url")
+    title = clean_title(result.get("title", ""))
+    
+    # 清洗标题: 去除URL格式标题或空标题
+    if not title or title.lower() == url.lower():
+        title = ""
+    
     return {
-        "title": result.get("title", ""),
+        "title": title,
         "content": result.get("content", ""),
-        "query": query,                    # 记录是哪个查询找到的
-        "url": result.get("url"),
+        "query": query,                    # 记录来源查询
+        "url": url,
         "source": "web_search",
         "score": result.get("score", 0.0)  # Tavily相关性评分
     }
@@ -503,30 +601,69 @@ async def collect(self, state):
 ## 阶段5: 内容筛选 (Curation)
 
 **文件**: `backend/nodes/curator.py`  
-**服务**: 纯逻辑（使用Tavily评分）  
-**输入**: 73个文档  
-**输出**: 筛选后的文档（≥0.4分 或 官网来源）
+**服务**: 纯逻辑（使用Tavily评分 + URL过滤）  
+**输入**: 所有收集的文档  
+**输出**: 筛选后的文档（≥0.4分 或 官网来源，每类别最多30个）+ 引用列表
+
+### 筛选流程
+
+```python
+async def curate_data(self, state):
+    for data_field, (emoji, doc_type) in data_types.items():
+        data = state.get(data_field, {})
+        
+        # 1. URL去重 + 规范化 (去除query和fragment)
+        unique_docs = {}
+        for url, doc in data.items():
+            parsed = urlparse(url)
+            clean_url = parsed._replace(query='', fragment='').geturl()
+            if clean_url not in unique_docs:
+                unique_docs[clean_url] = doc
+        
+        # 2. 过滤低价值URL (url_filters.py)
+        # 跳过: 登录页、搜索结果、社交媒体等
+        
+        # 3. 评分筛选
+        evaluated_docs = self.evaluate_documents(docs, context)
+        
+        # 4. 按分数降序排列，取Top 30
+        sorted_items = sorted(relevant_docs.items(), 
+                             key=lambda item: item[1]['evaluation']['overall_score'],
+                             reverse=True)
+        if len(sorted_items) > 30:
+            sorted_items = sorted_items[:30]
+    
+    # 5. 收集引用信息 (process_references_from_search_results)
+    state['references'] = top_reference_urls
+    state['reference_titles'] = reference_titles
+    state['reference_info'] = reference_info
+```
 
 ### 相关性评分规则
 
 ```python
-def evaluate_documents(self, docs):
+def evaluate_documents(self, docs, context):
     """基于Tavily评分筛选文档"""
-    evaluated_docs = []
-    
     for doc in docs:
+        # 过滤低价值URL
+        if is_low_value_url(doc.get('url', '')):
+            continue  # 跳过
+        
         tavily_score = float(doc.get('score', 0))
         is_company_website = doc.get('source') == 'company_website'
         
-        # 两个条件任选其一
+        # 两个条件任选其一即可保留
         if tavily_score >= 0.4 or is_company_website:
             evaluated_docs.append({
                 **doc,
                 "evaluation": {
                     "overall_score": tavily_score,
-                    "reason": "company_website" if is_company_website else f"score_{tavily_score:.2f}"
+                    "query": doc.get('query', '')
                 }
             })
+    
+    # 按分数降序排列返回
+    evaluated_docs.sort(key=lambda x: x['evaluation']['overall_score'], reverse=True)
 ```
 
 ### 男鞋网站的具体筛选例子
@@ -600,35 +737,68 @@ state['curated_news_data'] = {
 ## 阶段6: 内容充实 (Enrichment)
 
 **文件**: `backend/nodes/enricher.py`  
-**服务**: Tavily Extract API  
-**输入**: 55个筛选后的文档 (仅有URL和摘要)  
-**输出**: 55个文档的完整 raw_content
+**服务**: 自研多策略爬虫 (主) + Tavily Extract API (兜底)  
+**输入**: 筛选后的文档 (仅有URL和摘要)  
+**输出**: 文档的完整 raw_content
+
+### 爬取策略
+
+每个URL按顺序尝试:
+```
+1. 自研爬虫 (scrape_engine.py)
+   └─ static-html → json-ld → enhanced-static
+   └─ 成功条件: content不为空且 len(content) > 50
+   
+2. Tavily Extract (兜底)
+   └─ tavily_client.extract(url)
+   └─ 返回 result['results'][0]['raw_content']
+```
 
 ### 工作流程
 
 ```python
-async def fetch_raw_content(self, urls):
+async def fetch_raw_content(self, urls, job_id=None):
     """并行获取所有URL的完整内容"""
     
-    # 分批处理 (每批20个)
+    # 分批处理 (每批20个URL)
     batches = [urls[i:i+20] for i in range(0, len(urls), 20)]
     
-    # 每批最多3个并发
+    # 每批最多3个并发 (避免被限流)
     semaphore = asyncio.Semaphore(3)
     
     async def process_batch(batch_urls):
         async with semaphore:
             tasks = [
-                tavily_client.extract(url) 
+                self.fetch_single_content(url, job_id=job_id) 
                 for url in batch_urls
             ]
-            results = await asyncio.gather(*tasks)
-            return results
+            return await asyncio.gather(*tasks)
     
     # 执行所有批次
-    all_results = await asyncio.gather(
+    batch_results = await asyncio.gather(
         *[process_batch(batch) for batch in batches]
     )
+
+async def fetch_single_content(self, url, job_id=None):
+    """单URL抓取: 自研爬虫优先，Tavily兜底"""
+    # Try 1: 自研爬虫
+    content = await extract_url_content(url)  # scrape_engine.py
+    if content and len(content) > 50:
+        return (url, content, 'custom')  # ✅ 成功
+    
+    # Try 2: Tavily Extract 兜底
+    result = await self.tavily_client.extract(url)
+    if result and result.get('results'):
+        return (url, result['results'][0].get('raw_content', ''), 'tavily')
+    
+    return (url, '', 'failed')  # ❌ 全部失败
+```
+
+### 抓取统计
+
+每次充实完成后记录统计:
+```
+[Enricher] 抓取统计: 自研成功=38, Tavily兜底=12, 失败=5, 总计=55
 ```
 
 ### 具体例子
@@ -639,17 +809,22 @@ curated_company_data = {
     'https://example-shoes.com/products': {
         'title': 'Example Shoes 产品系列',
         'content': '我们提供多种男鞋...',  # 摘要 (200字)
-        'score': 0.92
+        'score': 0.92,
+        'evaluation': {'overall_score': 0.92, 'query': '...'}
         # 注意: 这里没有 raw_content
     }
 }
 ```
 
-**Tavily Extract处理**:
+**自研爬虫处理**:
 ```
-for url in ['https://example-shoes.com/products', ...]:
-    result = await tavily_client.extract(url)
-    # 返回完整的页面内容
+for url in curated_urls:
+    # 尝试1: httpx + BeautifulSoup
+    content = await extract_url_content(url)
+    #   → scrape_static() → scrape_json_ld() → scrape_enhanced()
+    
+    # 尝试2: 如果自研全部失败
+    result = await self.tavily_client.extract(url)
 ```
 
 **输出** (Stage 6后):
@@ -674,19 +849,12 @@ curated_company_data = {
            - 价格: 599-1299元
         
         ### 公司简介
-        Example Shoes Inc成立于2015年，总部位于杭州。我们是中国领先的
-        在线男鞋零售商，专注于为消费者提供高质量、高性价比的男鞋产品。
+        Example Shoes Inc成立于2015年，总部位于杭州。
         
         ### 服务优势
         - 免费配送 (满99元)
         - 7天无理由退货
-        - 专业鞋类顾问咨询
-        - 官方授权品牌
-        
-        ### 联系方式
-        服务热线: 400-123-456
-        工作时间: 09:00-18:00
-        '''  # 完整内容 (3000字+)
+        '''  # 完整内容 (最大20000字符)
     }
 }
 ```
@@ -710,9 +878,9 @@ curated_company_data = {
 ## 阶段7: 简报生成 (Briefing)
 
 **文件**: `backend/nodes/briefing.py`  
-**服务**: Azure OpenAI GPT-4o  
-**输入**: 55个充实后的文档 (含raw_content)  
-**输出**: 4份简报 (Company/Industry/Financial/News)
+**服务**: Azure OpenAI GPT-4o (通过 LangChain AzureChatOpenAI)  
+**输入**: 充实后的文档 (含raw_content)  
+**输出**: 4份中文简报 (Company/Industry/Financial/News)
 
 ### 工作流程
 
@@ -722,24 +890,55 @@ curated_company_data = {
 async def generate_category_briefing(self, docs, category, context):
     """生成特定类别的简报"""
     
-    # 准备文档
-    prepared_docs = self._prepare_documents(docs)
+    # 1. 准备文档 (按evaluation score降序排列)
+    sorted_items = sorted(items, 
+        key=lambda x: float(x[1].get('evaluation', {}).get('overall_score', '0')),
+        reverse=True)
     
-    # 调用GPT-4o
+    # 2. 格式化文档文本 (总计不超过120000字符)
+    prepared_docs = self._prepare_documents(docs)
+    # 每个文档格式: "Source URL: ...\nTitle: ...\n\nContent: ..."
+    # 单个文档最大8000字符
+    
+    # 3. 调用Azure GPT-4o
     prompt = ChatPromptTemplate.from_messages([
-        ("system", "You are an expert researcher..."),
-        ("user", f"Generate a {category} briefing based on:\n{prepared_docs}")
+        ("system", BRIEFING_ANALYSIS_INSTRUCTION),
+        ("user", category_prompt + "\n\nDocuments:\n{documents}")
     ])
     
-    chain = prompt | azure_llm
+    chain = prompt | self.llm | StrOutputParser()
     
-    # 流式输出
+    # 4. 流式输出 (实时发送给前端)
     async for chunk in chain.astream(input_data):
-        yield chunk  # 实时流给前端
+        yield {"type": "briefing_chunk", "content": chunk, "category": category}
     
-    # 存储完整简报
+    # 5. 存储完整简报
     state[f'{category}_briefing'] = full_response
 ```
+
+### 文档准备细节
+
+```python
+def _prepare_documents(self, docs):
+    """文档预处理规则"""
+    # 优先使用 raw_content (完整内容)，没有则使用 content (摘要)
+    content = doc.get('raw_content') or doc.get('content', '')
+    
+    # 单文档截断: 最大8000字符
+    if len(content) > 8000:
+        content = content[:8000] + "... [content truncated]"
+    
+    # 总长度限制: 120000字符 (超出则截断后续文档)
+    if total_length + len(doc_entry) >= 120000:
+        break  # 不再添加更多文档
+```
+
+### Prompt特点 (所有简报)
+
+1. **强制中文输出**: "Output the entire briefing in Chinese (简体中文)"
+2. **内联引用**: "After each fact, add [来源](url) linking to source URL"
+3. **仅bullet点**: "No paragraphs, only bullet points"
+4. **不允许空信息**: "Never mention 'no information found'"
 
 ### 4份简报详解
 
@@ -935,11 +1134,26 @@ async def generate_category_briefing(self, docs, category, context):
 ## 阶段8: 报告编译 (Editor)
 
 **文件**: `backend/nodes/editor.py`  
-**服务**: Azure OpenAI GPT-4o (2阶段编辑)  
-**输入**: 4份简报 (Company/Industry/Financial/News)  
+**服务**: Azure OpenAI GPT-4o (2阶段编辑, 流式输出)  
+**输入**: 4份简报 (Company/Industry/Financial/News) + 引用列表  
 **输出**: 最终Markdown报告
 
 ### 工作流程
+
+```python
+async def edit_report(self, state, individual_briefings):
+    # 阶段1: 内容汇编 (Compile)
+    compiled = await self._compile(state, individual_briefings)
+    
+    # 阶段2: 内容清理 (Content Sweep)
+    final_report = await self._sweep(state, compiled)
+    
+    # 附加引用部分
+    references_section = format_references_section(state)
+    final_report += references_section
+    
+    return final_report
+```
 
 #### **第1阶段：内容汇编 (Compile)**
 
@@ -1212,31 +1426,31 @@ Example Shoes Inc是一家专注于男鞋零售的在线电商平台，成立于
 │  输入: Company="Example Shoes Inc", URL="https://example-shoes.com", 
 │        Industry="Online Retail", HQ="Hangzhou"
 │
-├─ T1: 阶段1 - 官网抓取 (1-2秒)
-│  └─ 完成: 抓取5个官网页面
+├─ T1: 阶段1 - 官网抓取 (2-5秒)
+│  └─ 自研爬虫抓取5个页面 (或Tavily兜底)
 │
 ├─ T2: 阶段2 - 查询生成 (3-5秒)
-│  └─ 完成: 生成16条搜索查询
+│  └─ 4个Azure GPT-4o并行调用，生成16条搜索查询
 │
-├─ T3: 阶段3 - 文档搜集 (8-12秒)
-│  └─ 完成: 收集73个文档
+├─ T3: 阶段3 - 文档搜集 (5-10秒)
+│  └─ 16条查询并行Tavily搜索，收集~80个文档
 │
-├─ T4: 阶段4 - 数据汇总 (1秒)
-│  └─ 完成: 统计4类别文档
+├─ T4: 阶段4 - 数据汇总 (<1秒)
+│  └─ 统计4类别文档数量
 │
-├─ T5: 阶段5 - 内容筛选 (2秒)
-│  └─ 完成: 73 → 55个文档
+├─ T5: 阶段5 - 内容筛选 (1-2秒)
+│  └─ 评分筛选 + URL去重 + Top30限制
 │
-├─ T6: 阶段6 - 内容充实 (15-20秒)
-│  └─ 完成: 获取所有文档完整内容
+├─ T6: 阶段6 - 内容充实 (10-20秒)
+│  └─ 自研爬虫+Tavily兜底，并行获取完整内容
 │
 ├─ T7: 阶段7 - 简报生成 (30-40秒)
-│  └─ 完成: 生成4份简报（流式输出）
+│  └─ 4个类别顺序生成简报（流式输出）
 │
 ├─ T8: 阶段8 - 报告编译 (20-30秒)
-│  └─ 完成: 最终Markdown报告（流式输出）
+│  └─ 2阶段编辑：汇编 → 清理（流式输出）
 │
-└─ T9: 完成！(总耗时: 80-110秒)
+└─ T9: 完成！(总耗时: 70-110秒)
 ```
 
 ---
@@ -1244,30 +1458,68 @@ Example Shoes Inc是一家专注于男鞋零售的在线电商平台，成立于
 ## 🔑 关键数据流
 
 ```
-官网页面 (5个)
-    ↓ [raw_content]
+官网页面 (最多50个)
+    ↓ [自研爬虫(httpx+BS4) → Tavily兜底]
     ↓
-[Stage 1] 
+[Stage 1: site_scrape] 
+    ↓
+Azure GPT-4o × 4个并行节点
     ↓
 16条搜索查询
-    ↓ [并行执行Tavily搜索]
+    ↓ [Tavily Search API并行执行]
     ↓
-73个文档 (含score, content)
-    ↓ [按score≥0.4 或 官网来源筛选]
+~80个文档 (含score, content)
+    ↓ [URL去重 + score≥0.4/官网 + low_value过滤 + Top30]
     ↓
-55个文档
-    ↓ [Tavily extract获取完整内容]
+~55个文档
+    ↓ [自研爬虫(httpx+BS4) → Tavily extract兜底]
     ↓
-55个文档 (含raw_content)
-    ↓ [按类别分组]
+~50个文档 (含raw_content，部分可能失败)
+    ↓ [按类别分组，按score排序]
     ↓
 4个类别的充实文档集合
-    ↓ [Azure GPT-4o生成4份简报]
+    ↓ [Azure GPT-4o × 4次调用，生成中文简报]
     ↓
 4份简报 (Company/Industry/Financial/News)
-    ↓ [Azure GPT-4o汇编+清理]
+    ↓ [Azure GPT-4o × 2次调用: 汇编+清理]
     ↓
-最终Markdown报告
+最终Markdown报告 + References
+```
+
+---
+
+## 🏗️ LangGraph 工作流拓扑
+
+```python
+# graph.py 中的工作流定义
+workflow = StateGraph(InputState)
+
+# 节点注册
+workflow.add_node("grounding", ground.run)
+workflow.add_node("financial_analyst", financial_analyst.run)
+workflow.add_node("news_scanner", news_scanner.run)
+workflow.add_node("industry_analyst", industry_analyst.run)
+workflow.add_node("company_analyst", company_analyst.run)
+workflow.add_node("collector", collector.run)
+workflow.add_node("curator", curator.run)
+workflow.add_node("enricher", enricher.run)
+workflow.add_node("briefing", briefing.run)
+workflow.add_node("editor", editor.run)
+
+# 入口和出口
+workflow.set_entry_point("grounding")
+workflow.set_finish_point("editor")
+
+# 边 (fan-out + fan-in模式)
+for node in ["financial_analyst", "news_scanner", "industry_analyst", "company_analyst"]:
+    workflow.add_edge("grounding", node)   # fan-out: 1→4
+    workflow.add_edge(node, "collector")    # fan-in:  4→1
+
+# 线性处理管道
+workflow.add_edge("collector", "curator")
+workflow.add_edge("curator", "enricher")
+workflow.add_edge("enricher", "briefing")
+workflow.add_edge("briefing", "editor")
 ```
 
 ---
@@ -1276,19 +1528,33 @@ Example Shoes Inc是一家专注于男鞋零售的在线电商平台，成立于
 
 该智能体通过以下步骤自动化公司研究报告生成：
 
-1. **Grounding** - 快速获取官网基础信息
-2. **Query Generation** - 用LLM生成针对性搜索查询
-3. **Parallel Search** - 并行执行Tavily搜索，高效收集信息
+1. **Grounding** - 自研爬虫抓取官网 (Tavily兜底)
+2. **Query Generation** - Azure GPT-4o生成针对性搜索查询
+3. **Parallel Search** - 并行Tavily搜索，高效收集信息
 4. **Collection** - 汇总统计所有数据
-5. **Curation** - 基于Tavily评分（≥0.4）智能筛选内容
-6. **Enrichment** - 获取所有筛选文档的完整内容
-7. **Briefing** - 用LLM为4个类别生成结构化简报
-8. **Editor** - 用LLM汇编简报为最终专业报告
+5. **Curation** - 基于Tavily评分（≥0.4）+ URL质量过滤 + Top30限制
+6. **Enrichment** - 自研爬虫获取完整内容 (Tavily兜底)
+7. **Briefing** - Azure GPT-4o为4个类别生成结构化中文简报
+8. **Editor** - Azure GPT-4o 2阶段汇编为最终专业报告
 
 整个流程充分利用了：
-- **LLM能力** (Azure GPT-4o) - 生成查询、简报、报告
-- **搜索能力** (Tavily API) - 信息收集和评分
+- **LLM能力** (Azure OpenAI GPT-4o) - 查询生成、简报生成、报告编译
+- **搜索能力** (Tavily Search API) - 信息检索和相关性评分
+- **自研爬虫** (httpx + BeautifulSoup4) - 降低API成本，提高稳定性
+- **工作流引擎** (LangGraph StateGraph) - 并行分支、状态管理
 - **异步并行** (asyncio) - 高效处理多任务
 - **流式输出** (SSE) - 实时用户反馈
 
-最终产出一份结构清晰、信息完整、格式规范的Markdown公司研究报告。
+### 关键设计决策
+
+| 决策 | 原因 |
+|------|------|
+| 自研爬虫优先 | 降低Tavily API调用成本，减少依赖 |
+| Tavily作为兜底 | 自研爬虫受反爬限制时保证可用性 |
+| 4个研究节点并行 | LangGraph fan-out，缩短总耗时 |
+| 每类别Top 30限制 | 避免超出LLM上下文窗口 |
+| 文档8000字符截断 | 平衡信息量与token消耗 |
+| 2阶段编辑 | 先整合后精炼，提高报告质量 |
+| 中文输出 | Prompt强制中文，所有简报和报告为简体中文 |
+
+最终产出一份结构清晰、信息完整、格式规范的中文Markdown公司研究报告。

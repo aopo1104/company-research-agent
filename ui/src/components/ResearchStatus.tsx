@@ -25,7 +25,7 @@ const ResearchStatus = ({
             <div className={`${glassStyle.base} p-2 rounded-full bg-[#FE363B]/10 border-[#FE363B]/20`}>
               <XCircle className="h-5 w-5 text-[#FE363B]" />
             </div>
-          ) : status?.step === "Complete" || isComplete ? (
+          ) : status?.step === "Complete" || status?.step === "\u5b8c\u6210" || isComplete ? (
             <div className={`${glassStyle.base} p-2 rounded-full bg-[#22C55E]/10 border-[#22C55E]/20`}>
               <CheckCircle2 className="h-5 w-5 text-[#22C55E]" />
             </div>
