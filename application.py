@@ -373,6 +373,7 @@ async def stream_research(job_id: str):
                 await asyncio.sleep(0.1)
             
             last_step = None
+            heartbeat_counter = 0
             
             # Stream status updates
             while job_id in job_status:
@@ -381,17 +382,21 @@ async def stream_research(job_id: str):
                 current_step = result.get("current_step")
                 events = result.get("events", [])
                 
+                sent_data = False
+                
                 # Send node progress updates when step changes
                 if status == "processing" and current_step and current_step != last_step:
                     data = json.dumps({"type": "progress", "step": current_step})
                     yield f"data: {data}\n\n"
                     last_step = current_step
+                    sent_data = True
                 
                 # Send all queued events (FIFO - pop from start)
                 while events:
                     event = events.pop(0)
                     data = json.dumps(event)
                     yield f"data: {data}\n\n"
+                    sent_data = True
                 
                 if status == "completed" and (report := result.get("report")):
                     data = json.dumps({"type": "complete", "report": report})
@@ -406,12 +411,26 @@ async def stream_research(job_id: str):
                     yield f"data: {data}\n\n"
                     break
                 
+                # Send SSE keepalive comment every ~15 seconds to prevent proxy/browser timeout
+                heartbeat_counter += 1
+                if not sent_data and heartbeat_counter >= 150:
+                    yield ": keepalive\n\n"
+                    heartbeat_counter = 0
+                
                 await asyncio.sleep(0.1)  # Faster polling for responsive updates
         except Exception as e:
             data = json.dumps({"type": "error", "error": str(e)})
             yield f"data: {data}\n\n"
     
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 @app.get("/research/{job_id}/report")
 async def get_research_report(job_id: str):
@@ -491,8 +510,16 @@ async def generate_email(data: EmailGenerationRequest):
         if not azure_api_key or not azure_instance or not azure_deployment:
             raise HTTPException(status_code=500, detail="Missing Azure OpenAI config")
 
+        azure_endpoint = azure_instance.strip()
+        if azure_endpoint.startswith("http://") or azure_endpoint.startswith("https://"):
+            pass
+        elif "." in azure_endpoint:
+            azure_endpoint = f"https://{azure_endpoint}"
+        else:
+            azure_endpoint = f"https://{azure_endpoint}.openai.azure.com"
+
         llm = AzureChatOpenAI(
-            azure_endpoint=f"https://{azure_instance}.openai.azure.com",
+            azure_endpoint=azure_endpoint,
             azure_deployment=azure_deployment,
             api_version=azure_version,
             api_key=azure_api_key,
@@ -549,8 +576,16 @@ async def translate_report(data: TranslateRequest):
         if not azure_api_key or not azure_instance or not azure_deployment:
             raise HTTPException(status_code=500, detail="Missing Azure OpenAI config")
 
+        azure_endpoint = azure_instance.strip()
+        if azure_endpoint.startswith("http://") or azure_endpoint.startswith("https://"):
+            pass
+        elif "." in azure_endpoint:
+            azure_endpoint = f"https://{azure_endpoint}"
+        else:
+            azure_endpoint = f"https://{azure_endpoint}.openai.azure.com"
+
         llm = AzureChatOpenAI(
-            azure_endpoint=f"https://{azure_instance}.openai.azure.com",
+            azure_endpoint=azure_endpoint,
             azure_deployment=azure_deployment,
             api_version=azure_version,
             api_key=azure_api_key,

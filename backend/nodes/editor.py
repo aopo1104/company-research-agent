@@ -90,10 +90,18 @@ class Editor:
         
         if not azure_api_key or not azure_instance or not azure_deployment:
             raise ValueError("Missing Azure OpenAI configuration")
+
+        azure_endpoint = azure_instance.strip()
+        if azure_endpoint.startswith("http://") or azure_endpoint.startswith("https://"):
+            pass
+        elif "." in azure_endpoint:
+            azure_endpoint = f"https://{azure_endpoint}"
+        else:
+            azure_endpoint = f"https://{azure_endpoint}.openai.azure.com"
         
         # 配置LangChain Azure OpenAI客户端（支持流式输出）
         self.llm = AzureChatOpenAI(
-            azure_endpoint=f"https://{azure_instance}.openai.azure.com",
+            azure_endpoint=azure_endpoint,
             azure_deployment=azure_deployment,
             api_version=azure_version,
             api_key=azure_api_key,

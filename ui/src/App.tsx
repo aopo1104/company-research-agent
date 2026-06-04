@@ -13,6 +13,7 @@ import type { ResearchOutput, ResearchStatusType } from './types';
 import { glassStyle, fadeInAnimation } from './styles';
 
 const API_URL = import.meta.env.VITE_API_URL || "/companyResearchAPI";
+const MAX_STREAM_RECOVERY_RETRIES = 12;
 
 function App() {
 
@@ -53,6 +54,7 @@ function App() {
   const [isReportStreaming, setIsReportStreaming] = useState(false);
   const latestStatusRef = useRef<ResearchStatusType | null>(null);
   const streamSettledRef = useRef(false);
+  const streamRecoveryAttemptsRef = useRef(0);
   const [loaderColor, setLoaderColor] = useState("#468BFF");
   
   // Scroll helper function
@@ -195,6 +197,30 @@ function App() {
 
     const lastKnownStep = latestStatusRef.current?.step || 'Unknown stage';
     const lastKnownMessage = latestStatusRef.current?.message || 'No additional backend status available';
+
+    if (lastPayload?.status === 'processing' || lastPayload?.status === 'pending') {
+      if (streamRecoveryAttemptsRef.current < MAX_STREAM_RECOVERY_RETRIES) {
+        streamRecoveryAttemptsRef.current += 1;
+        const stage = typeof lastPayload.stage === 'string' ? lastPayload.stage : (latestStatusRef.current?.step || 'processing');
+        setStatus({
+          step: stage,
+          message: `研究仍在进行中（${streamRecoveryAttemptsRef.current}/${MAX_STREAM_RECOVERY_RETRIES}），正在重连...`
+        });
+        setError(null);
+        setTimeout(() => {
+          streamResults(jobId);
+        }, 600);
+        return;
+      }
+
+      const stage = typeof lastPayload.stage === 'string' ? lastPayload.stage : (latestStatusRef.current?.step || 'processing');
+      const message = `[${stage}] Report not ready yet (still processing after reconnect retries)`;
+      setStatus({ step: stage, message });
+      setError(message);
+      setIsResearching(false);
+      streamSettledRef.current = true;
+      return;
+    }
 
     if (lastPayload?.status) {
       const stage = typeof lastPayload.stage === 'string' ? lastPayload.stage : lastKnownStep;
@@ -438,6 +464,7 @@ function App() {
             message: '正在生成最终报告...'
           });
         } else if (data.type === 'complete' && data.report) {
+          streamRecoveryAttemptsRef.current = 0;
           setIsReportStreaming(false);
           setOutput({
             summary: "",
@@ -449,6 +476,7 @@ function App() {
           streamSettledRef.current = true;
           eventSource.close();
         } else if (data.type === 'error') {
+          streamRecoveryAttemptsRef.current = 0;
           const message = formatStageError(data.stage, data.error);
           setStatus({ step: data.stage || '失败', message });
           setError(message);
@@ -532,6 +560,7 @@ function App() {
     }
 
     setIsResearching(true);
+    streamRecoveryAttemptsRef.current = 0;
     setOriginalCompanyName(formData.companyName || formData.companyUrl);
     setStatus({
       step: "处理中",

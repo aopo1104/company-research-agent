@@ -75,10 +75,18 @@ class BaseResearcher:
         
         if not tavily_key or not azure_api_key or not azure_instance or not azure_deployment:
             raise ValueError("Missing API keys")
+
+        azure_endpoint = azure_instance.strip()
+        if azure_endpoint.startswith("http://") or azure_endpoint.startswith("https://"):
+            pass
+        elif "." in azure_endpoint:
+            azure_endpoint = f"https://{azure_endpoint}"
+        else:
+            azure_endpoint = f"https://{azure_endpoint}.openai.azure.com"
             
         self.tavily_client = AsyncTavilyClient(api_key=tavily_key)
         self.llm = AzureChatOpenAI(
-            azure_endpoint=f"https://{azure_instance}.openai.azure.com",
+            azure_endpoint=azure_endpoint,
             azure_deployment=azure_deployment,
             api_version=azure_version,
             api_key=azure_api_key,

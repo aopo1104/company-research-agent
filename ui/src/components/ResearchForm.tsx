@@ -184,6 +184,12 @@ const ResearchForm = ({
 
     setIsExtracting(true);
     setExtractionError(null);
+    setFormData((prev) => ({
+      ...prev,
+      companyName: '',
+      companyIndustry: '',
+      companyHq: '',
+    }));
 
     try {
       const response = await fetch(`${API_URL}/extract-company-info`, {
@@ -205,9 +211,9 @@ const ResearchForm = ({
       if (data.success) {
         setFormData(prev => ({
           ...prev,
-          companyName: data.company_name || prev.companyName,
-          companyIndustry: data.industry || prev.companyIndustry,
-          companyHq: data.hq_location || prev.companyHq,
+          companyName: data.company_name || '',
+          companyIndustry: data.industry || '',
+          companyHq: data.hq_location || '',
         }));
         setExtractionError(null);
       } else {
