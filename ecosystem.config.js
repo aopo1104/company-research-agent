@@ -1,10 +1,14 @@
+const path = require('path');
+
+const ROOT = __dirname;
+
 module.exports = {
   apps: [
     {
       name: 'company-research-backend',
       script: 'application.py',
-      interpreter: './.venv/Scripts/python.exe',
-      cwd: './company-research-agent-main',
+      interpreter: path.join(ROOT, '.venv', 'Scripts', 'python.exe'),
+      cwd: ROOT,
       env: {
         NODE_ENV: 'development'
       },
@@ -20,7 +24,7 @@ module.exports = {
       name: 'company-research-frontend',
       script: 'npm',
       args: 'run dev',
-      cwd: './company-research-agent-main/ui',
+      cwd: path.join(ROOT, 'ui'),
       autorestart: true,
       watch: ['src', 'public', 'package.json'],
       ignore_watch: ['node_modules', 'dist', '.git'],
