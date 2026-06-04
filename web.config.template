@@ -4,30 +4,11 @@
     <rewrite>
       <rules>
         <!-- API 路由：/companyResearchAPI/* → http://localhost:9999/* -->
-        <rule name="API_Route" stopProcessing="true">
+        <rule name="CompanyResearchAPI_Route" stopProcessing="true">
           <match url="^companyResearchAPI/(.*)" />
           <action type="Rewrite" url="http://localhost:9999/{R:1}" />
         </rule>
-        
-        <!-- 研究页面路由：/companyResearch* → http://localhost:3004 -->
-        <rule name="CompanyResearch_Route" stopProcessing="true">
-          <match url="^companyResearch(.*)" />
-          <action type="Rewrite" url="http://localhost:3004/companyResearch{R:1}" />
-        </rule>
-        
-        <!-- 其他路由统一转到前端（支持 SPA 路由） -->
-        <rule name="Default_Route" stopProcessing="true">
-          <match url="^(?!companyResearchAPI|companyResearch)" />
-          <action type="Rewrite" url="http://localhost:3004/{R:0}" />
-        </rule>
       </rules>
     </rewrite>
-    
-    <!-- 代理设置 -->
-    <proxy>
-      <bypassList>
-        <add address="localhost" />
-      </bypassList>
-    </proxy>
   </system.webServer>
 </configuration>
