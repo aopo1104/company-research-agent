@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+  <system.webServer>
+    <rewrite>
+      <rules>
+        <!-- API 路由：/api* → http://localhost:9999 -->
+        <rule name="API_Route" stopProcessing="true">
+          <match url="^api/(.*)" />
+          <action type="Rewrite" url="http://localhost:9999/api/{R:1}" />
+        </rule>
+        
+        <!-- 研究页面路由：/companyResearch* → http://localhost:3004 -->
+        <rule name="CompanyResearch_Route" stopProcessing="true">
+          <match url="^companyResearch(.*)" />
+          <action type="Rewrite" url="http://localhost:3004/companyResearch{R:1}" />
+        </rule>
+        
+        <!-- 其他路由统一转到前端（支持 SPA 路由） -->
+        <rule name="Default_Route" stopProcessing="true">
+          <match url="^(?!api|companyResearch)" />
+          <action type="Rewrite" url="http://localhost:3004/{R:0}" />
+        </rule>
+      </rules>
+      
+      <outboundRules>
+        <!-- 修复代理返回的 Location 头（仅限 API） -->
+        <rule name="Rewrite_Location_Header">
+          <match serverVariable="RESPONSE_LOCATION" pattern="^http://localhost:9999/(.*)" />
+          <action type="Rewrite" value="/api/{R:1}" />
+        </rule>
+      </outboundRules>
+    </rewrite>
+    
+    <!-- 代理设置 -->
+    <proxy>
+      <bypassList>
+        <add address="localhost" />
+      </bypassList>
+    </proxy>
+  </system.webServer>
+</configuration>

@@ -52,7 +52,7 @@ const ResearchReport = ({
     setIsTranslating(true);
     setTranslateError(null);
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+      const apiUrl = import.meta.env.VITE_API_URL || '/api';
       const response = await fetch(`${apiUrl}/translate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
