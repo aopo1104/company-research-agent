@@ -25,16 +25,14 @@ module.exports = {
     {
       name: 'company-research-frontend',
       script: 'cmd',
-      args: '/c npm.cmd run dev',
+      args: '/c npm.cmd run build',
       interpreter: 'none',
       windowsHide: true,
       cwd: path.join(ROOT, 'ui'),
-      autorestart: true,
+      autorestart: false,
       watch: false,
-      ignore_watch: ['node_modules', 'dist', '.git'],
-      max_memory_restart: '300M',
-      error_file: path.join(ROOT, 'logs', 'frontend-error.log'),
-      out_file: path.join(ROOT, 'logs', 'frontend-out.log'),
+      error_file: path.join(ROOT, 'logs', 'frontend-build.log'),
+      out_file: path.join(ROOT, 'logs', 'frontend-build.log'),
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z'
     }
   ]
