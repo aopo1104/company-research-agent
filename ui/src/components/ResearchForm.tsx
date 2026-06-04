@@ -4,7 +4,7 @@ import LocationInput from './LocationInput';
 import ExamplePopup from './ExamplePopup';
 import type { ExampleCompany } from './ExamplePopup';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = import.meta.env.VITE_API_URL || '/companyResearchAPI';
 const HISTORY_KEY = 'research_history';
 const MAX_HISTORY = 10;
 

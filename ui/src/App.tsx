@@ -12,7 +12,7 @@ import {
 import type { ResearchOutput, ResearchStatusType } from './types';
 import { glassStyle, fadeInAnimation } from './styles';
 
-const API_URL = import.meta.env.VITE_API_URL || "/api";
+const API_URL = import.meta.env.VITE_API_URL || "/companyResearchAPI";
 
 function App() {
 

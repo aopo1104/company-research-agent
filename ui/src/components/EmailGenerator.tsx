@@ -15,7 +15,7 @@ interface GeneratedEmail {
   outreachAngle: string;
 }
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+const API_URL = import.meta.env.VITE_API_URL || '/companyResearchAPI';
 
 const EmailGenerator = ({ reportContent, companyName, isResetting }: EmailGeneratorProps) => {
   const [isGenerating, setIsGenerating] = useState(false);
