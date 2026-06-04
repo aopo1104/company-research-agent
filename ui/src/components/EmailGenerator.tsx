@@ -22,6 +22,7 @@ const EmailGenerator = ({ reportContent, companyName, isResetting }: EmailGenera
   const [email, setEmail] = useState<GeneratedEmail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isCopied, setIsCopied] = useState(false);
+  const [isCopiedBody, setIsCopiedBody] = useState(false);
 
   const generateEmail = async () => {
     setIsGenerating(true);
@@ -58,6 +59,17 @@ const EmailGenerator = ({ reportContent, companyName, isResetting }: EmailGenera
       await navigator.clipboard.writeText(fullText);
       setIsCopied(true);
       setTimeout(() => setIsCopied(false), 2000);
+    } catch {
+      setError('复制失败');
+    }
+  };
+
+  const copyBody = async () => {
+    if (!email) return;
+    try {
+      await navigator.clipboard.writeText(email.body);
+      setIsCopiedBody(true);
+      setTimeout(() => setIsCopiedBody(false), 2000);
     } catch {
       setError('复制失败');
     }
@@ -155,9 +167,18 @@ const EmailGenerator = ({ reportContent, companyName, isResetting }: EmailGenera
 
           {/* Email Body */}
           <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-            <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
-              <Mail className="h-3.5 w-3.5 text-gray-400" />
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">EMAIL BODY</span>
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-gray-100">
+              <div className="flex items-center gap-2">
+                <Mail className="h-3.5 w-3.5 text-gray-400" />
+                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">EMAIL BODY</span>
+              </div>
+              <button
+                onClick={copyBody}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium text-gray-500 hover:text-[#468BFF] hover:bg-[#468BFF]/5 transition-all"
+              >
+                {isCopiedBody ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
+                {isCopiedBody ? '已复制' : '复制正文'}
+              </button>
             </div>
             <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans leading-7">
               {email.body}

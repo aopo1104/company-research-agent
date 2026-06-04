@@ -33,13 +33,13 @@ const ResearchQueries = ({
       </div>
       
       <div className={`overflow-hidden transition-all duration-500 ease-in-out ${
-        isExpanded ? 'mt-4 max-h-[1000px] opacity-100' : 'max-h-0 opacity-0'
+        isExpanded ? 'mt-4 max-h-[9999px] opacity-100' : 'max-h-0 opacity-0'
       }`}>
-        <div className="grid grid-cols-2 gap-4">
-          {['company', 'industry', 'financial', 'news'].map((category) => (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {['company', 'industry', 'financial', 'news', 'social_media'].map((category) => (
             <div key={category} className={`${glassStyle} rounded-xl p-3`}>
               <h3 className="text-base font-medium text-gray-900 mb-3">
-                {({'company':'公司','industry':'行业','financial':'财务','news':'新闻'} as Record<string,string>)[category] || category}查询
+                {({'company':'公司','industry':'行业','financial':'财务','news':'新闻','social_media':'社媒'} as Record<string,string>)[category] || category}查询
               </h3>
               <div className="space-y-2">
                 {/* Show streaming queries first */}
@@ -47,7 +47,7 @@ const ResearchQueries = ({
                   .filter(([key]) => key.startsWith(category))
                   .map(([key, query]) => (
                     <div key={key} className="backdrop-filter backdrop-blur-lg bg-white/80 border border-[#468BFF]/30 rounded-lg p-2">
-                      <span className="text-gray-600">{query.text}</span>
+                      <span className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap break-words">{query.text}</span>
                       <span className="animate-pulse ml-1 text-[#8FBCFA]">|</span>
                     </div>
                   ))}
@@ -56,7 +56,7 @@ const ResearchQueries = ({
                   .filter((q) => q.category.startsWith(category))
                   .map((query, idx) => (
                     <div key={idx} className="backdrop-filter backdrop-blur-lg bg-white/80 border border-gray-200 rounded-lg p-2">
-                      <span className="text-gray-600">{query.text}</span>
+                      <span className="text-gray-600 text-sm leading-relaxed whitespace-pre-wrap break-words">{query.text}</span>
                     </div>
                   ))}
               </div>

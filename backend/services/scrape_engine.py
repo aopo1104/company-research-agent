@@ -1,14 +1,41 @@
 """
-Multi-strategy scrape engine inspired by CompetitiveAnalysis project.
+================================================================================
+scrape_engine.py - 自研多策略网页爬虫
+================================================================================
+实现3层爬虫策略，用于获取网页内容
 
-Strategies (tried in order):
-1. static-html: httpx GET + BeautifulSoup content extraction
-2. json-ld: Extract structured data from script[type="application/ld+json"]
-3. enhanced-static: httpx with anti-bot headers + content extraction
-4. tavily-fallback: Tavily crawl/extract as final fallback
+使用场景:
+  1. 阶段1 (grounding): 官网抓取
+  2. 阶段6 (enricher): 获取搜索结果的完整内容
 
-Each method returns a standardized result structure.
+爬虫策略 (按顺序尝试):
+  ① static-html: httpx GET + BeautifulSoup 内容提取
+                  适用: 大多数静态网站
+                  速度: 快
+                  
+  ② json-ld: 解析 script[type="application/ld+json"] 结构化数据
+             适用: 支持JSON-LD的现代网站
+             精度: 高（结构化数据）
+             
+  ③ enhanced-static: httpx + User-Agent headers (模拟浏览器)
+                      适用: 反爬虫防护网站
+                      成功率: 较高
+                      
+  ④ tavily-fallback: Tavily Crawl/Extract API
+                     适用: 所有失败的情况
+                     成本: API调用（付费）
+
+内容净化:
+  - 移除噪声标签: script, style, nav, footer等
+  - 移除样板文本: cookie、privacy、newsletter等
+  - 定位主内容: <main> > <article> > role="main" > .content
+  - 最大长度: 20000字符
+
+返回结果:
+  成功: (url, content, title) 或 json字典
+  失败: ('', '', '') 或 None
 """
+
 import asyncio
 import json
 import logging
@@ -21,13 +48,14 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+# 浏览器User-Agent - 避免被识别为爬虫
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/125.0.0.0 Safari/537.36"
 )
 
-# Noise patterns to remove from extracted text
+# 样板文本模式 - 需要移除的通用页面元素
 BOILERPLATE_PATTERNS = [
     re.compile(r"skip to (content|main|navigation)", re.I),
     re.compile(r"cookie (policy|consent|banner|notice)", re.I),
@@ -39,13 +67,19 @@ BOILERPLATE_PATTERNS = [
     re.compile(r"follow us on", re.I),
 ]
 
-# Tags to remove entirely
+# 需要完全移除的HTML标签
 NOISE_TAGS = [
     "script", "style", "noscript", "iframe", "svg",
     "nav", "footer", "header",
 ]
 
-MAX_TEXT_LENGTH = 20000
+MAX_TEXT_LENGTH = 20000  # 内容最大长度
+
+# 定向抓取默认关键词（用于产品/品类相关页面）
+DEFAULT_FOCUS_KEYWORDS = (
+    "product", "products", "category", "categories", "solution", "solutions",
+    "catalog", "collections", "portfolio", "shop", "store", "offerings",
+)
 
 
 class ScrapeResult:
@@ -198,11 +232,23 @@ def _flatten_json_ld(data: dict, prefix: str = "") -> str:
     return "\n".join(parts)
 
 
-def _discover_links(soup: BeautifulSoup, base_url: str, max_links: int = 50) -> List[str]:
-    """Discover internal links from a page for crawling."""
+def _discover_links(
+    soup: BeautifulSoup,
+    base_url: str,
+    max_links: int = 50,
+    focus_keywords: Optional[List[str]] = None,
+    strict_focus: bool = False,
+) -> List[str]:
+    """Discover internal links from a page for crawling.
+
+    When focus_keywords are provided, links matching those path keywords are ranked first.
+    If strict_focus is True, only matched links are returned.
+    """
     parsed_base = urlparse(base_url)
     base_domain = parsed_base.netloc.lower()
     found = set()
+    ranked_links = []
+    normalized_focus = [k.strip().lower() for k in (focus_keywords or []) if k and k.strip()]
 
     for a_tag in soup.find_all("a", href=True):
         href = a_tag["href"].strip()
@@ -225,11 +271,21 @@ def _discover_links(soup: BeautifulSoup, base_url: str, max_links: int = 50) -> 
         if any(path_lower.endswith(ext) for ext in skip_extensions):
             continue
 
-        found.add(clean_url)
-        if len(found) >= max_links:
-            break
+        is_focus_match = any(keyword in path_lower for keyword in normalized_focus) if normalized_focus else False
+        if strict_focus and normalized_focus and not is_focus_match:
+            continue
 
-    return list(found)
+        if clean_url in found:
+            continue
+
+        found.add(clean_url)
+        priority = 1 if is_focus_match else 0
+        ranked_links.append((priority, clean_url))
+
+    ranked_links.sort(key=lambda item: item[0], reverse=True)
+    ordered_links = [url for _, url in ranked_links]
+
+    return ordered_links[:max_links]
 
 
 async def _fetch_page(url: str, enhanced: bool = False) -> Optional[httpx.Response]:
@@ -344,6 +400,8 @@ async def crawl_site(
     url: str,
     max_pages: int = 50,
     max_depth: int = 1,
+    focus_keywords: Optional[List[str]] = None,
+    strict_focus: bool = False,
 ) -> Dict[str, Dict[str, Any]]:
     """
     Crawl a website starting from the given URL.
@@ -372,7 +430,13 @@ async def crawl_site(
         resp = await _fetch_page(url)
         if resp and max_depth > 0:
             soup = BeautifulSoup(resp.text, "html.parser")
-            discovered = _discover_links(soup, url, max_links=max_pages)
+            discovered = _discover_links(
+                soup,
+                url,
+                max_links=max_pages,
+                focus_keywords=focus_keywords,
+                strict_focus=strict_focus,
+            )
             to_visit.extend(discovered)
 
     # Crawl discovered pages concurrently

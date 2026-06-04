@@ -1,3 +1,24 @@
+"""
+================================================================================
+curator.py - 内容筛选阶段 (Stage 5)
+================================================================================
+对收集的文档进行评分、去重、过滤，保留高质量的相关文档
+
+输入: company_data, industry_data, financial_data, news_data (~80个文档)
+输出: curated_*_data (~55个文档), reference_titles, reference_info
+
+筛选规则:
+  1. URL规范化去重: 统一格式，移除query/fragment
+  2. 低价值URL过滤: 登录页、搜索结果、社交媒体等
+  3. 评分筛选: Tavily score ≥ 0.4 或 官网来源
+  4. 垃圾内容检测: 过滤Dictionary.com定义页等
+  5. 行业相关性检查: industry类别需验证内容相关性
+  6. Top 30限制: 每个类别最多保留30个文档
+  7. 引用收集: 保存所有URL的标题和元信息
+
+效果: 73文档 → 55文档 (75%通过率)
+"""
+
 import logging
 import re
 from typing import Dict
@@ -12,11 +33,25 @@ from ..utils.url_filters import is_low_value_url
 
 logger = logging.getLogger(__name__)
 
+# Generic words that should not be used as company-identity tokens
+GENERIC_COMPANY_TOKENS = {
+    "company", "co", "corp", "corporation", "inc", "ltd", "llc", "group", "global",
+    "official", "store", "shop", "brand", "business",
+    "office", "furniture", "market", "markets", "industry", "industries",
+}
+
 
 def _is_industry_relevant(doc: dict, company: str, industry: str, company_url: str | None) -> bool:
-    """
-    For industry category: check if a document is at least related to the industry/company.
-    Filters out obviously unrelated pages (e.g., dictionary definitions, tech tutorials).
+    """检测文档是否与行业/公司相关
+    
+    用途: 对industry_data进行额外的内容相关性检查
+         过滤明显无关的页面（如Dictionary.com的定义页）
+    
+    逻辑:
+      1. 官网域名优先: 官网所有页面都保留
+      2. 关键词匹配: 公司名 + 行业词出现在标题/内容
+      3. 业务关键词: market, industry, revenue, growth等
+      4. 返回True: 保留, False: 舍弃
     """
     url = doc.get('url', '').lower()
     title = (doc.get('title', '') or '').lower()
@@ -53,6 +88,7 @@ def _is_industry_relevant(doc: dict, company: str, industry: str, company_url: s
             return True
 
     # Also check for common industry-related keywords that indicate market/business content
+    # 业务关键词检查: 如果标题包含industry/market等，即使未提及公司名也认为相关
     business_keywords = ['market', 'industry', 'revenue', 'growth', 'competitor', 'trend', 'forecast',
                          'furniture', 'office', 'ergonomic', 'workspace', 'commercial', 'b2b',
                          'supplier', 'manufacturer', 'retail', 'wholesale', 'distribution']
@@ -64,9 +100,15 @@ def _is_industry_relevant(doc: dict, company: str, industry: str, company_url: s
 
 
 def _is_company_relevant(doc: dict, company: str, company_url: str | None) -> bool:
-    """
-    Check if a document is directly relevant to the target company.
-    Returns True if the doc likely pertains to the company, False if it's clearly unrelated.
+    """检测文档是否与目标公司直接相关
+    
+    用途: 对company_data和financial_data进行严格相关性过滤
+    
+    逻辑:
+      1. 官网页面: 直接保留 (source == 'company_website')
+      2. 官网域名: 来自公司官网域名的所有页面保留
+      3. 公司名匹配: 全名/部分词/无空格版本匹配标题/URL/内容
+      4. 返回True: 保留, False: 舍弃（不相关）
     """
     url = doc.get('url', '')
     title = (doc.get('title', '') or '').lower()
@@ -86,32 +128,84 @@ def _is_company_relevant(doc: dict, company: str, company_url: str | None) -> bo
         except Exception:
             pass
 
-    # Build search tokens from company name (handle multi-word names)
+    # Build search tokens from company name (drop generic words to avoid false positives)
     company_lower = company.lower()
-    # Create variants: full name, individual significant words (>2 chars), abbreviation
-    company_tokens = [company_lower]
+    company_tokens = []
+
+    # Full company phrase is always a strong signal
+    if company_lower:
+        company_tokens.append(company_lower)
+
+    # Individual distinctive words
     words = [w for w in re.split(r'[\s\-&+.,]+', company_lower) if len(w) > 2]
-    company_tokens.extend(words)
-    # Also create a no-space version for URL matching
+    distinct_words = [w for w in words if w not in GENERIC_COMPANY_TOKENS]
+    company_tokens.extend(distinct_words)
+
+    # No-space slug for URL/identifier matching
     company_slug = re.sub(r'[\s\-&+.,]+', '', company_lower)
     if len(company_slug) > 3:
         company_tokens.append(company_slug)
 
-    # Check if any company token appears in title, URL, or content
+    # Check stronger signals first
     url_lower = url.lower()
+    title_url_text = f"{title} {url_lower}"
+
+    # Full company phrase or slug appearing anywhere is strong enough
+    if company_lower and (company_lower in title_url_text or company_lower in content):
+        return True
+    if company_slug and (company_slug in title_url_text or company_slug in content):
+        return True
+
+    # Distinctive tokens appearing in title or URL are acceptable
+    distinctive_tokens = [t for t in company_tokens if t not in {company_lower, company_slug}]
+    for token in distinctive_tokens:
+        if token in title_url_text:
+            return True
+
+    # Content-only match requires at least two distinctive tokens to avoid generic matches
+    if distinctive_tokens:
+        content_hits = sum(1 for token in distinctive_tokens if token in content)
+        if content_hits >= 2:
+            return True
+
+    # Legacy fallback: never use generic words alone
     for token in company_tokens:
-        if token in title or token in url_lower or token in content:
+        if token in GENERIC_COMPANY_TOKENS:
+            continue
+        if token in title_url_text:
             return True
 
     return False
 
 class Curator:
+    """文档筛选器 - 基于相关性评分筛选高质量文档"""
+    
     def __init__(self) -> None:
+        """初始化Curator
+        
+        relevance_threshold: Tavily评分阈值 (≥0.4保留)
+        """
         self.relevance_threshold = 0.4
         logger.info(f"Curator initialized with relevance threshold: {self.relevance_threshold}")
 
     def evaluate_documents(self, docs: list, context: Dict[str, str], category: str = "") -> list:
-        """Evaluate documents based on Tavily's scoring and company relevance."""
+        """评估文档的相关性
+        
+        核心逻辑:
+          1. 低价值URL过滤: 登录页、搜索结果等直接跳过
+          2. 评分检查: Tavily score ≥ 0.4 或 官网来源保留
+          3. 官网加分: source='company_website'的文档给0.5基础分
+          4. 相关性验证: 严格类别(company/financial/news)需要验证公司提及
+          5. 排序: 按score降序排列
+        
+        Args:
+            docs: 文档列表
+            context: {company, company_url, industry, ...}
+            category: 类别 (company/financial/news/industry) - 决定严格程度
+            
+        Returns:
+            过滤后的文档列表 (已排序)
+        """
         if not docs:
             return []
 
@@ -211,7 +305,8 @@ class Curator:
             'financial_data': ('💰 Financial', 'financial'),
             'news_data': ('📰 News', 'news'),
             'industry_data': ('🏭 Industry', 'industry'),
-            'company_data': ('🏢 Company', 'company')
+            'company_data': ('🏢 Company', 'company'),
+            'social_media_data': ('📱 Social Media', 'social_media')
         }
 
         # Process each data type

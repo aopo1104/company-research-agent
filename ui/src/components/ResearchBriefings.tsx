@@ -9,6 +9,7 @@ type BriefingStatus = {
   industry: boolean;
   financial: boolean;
   news: boolean;
+  social_media: boolean;
 };
 
 interface ResearchBriefingsProps {
@@ -23,7 +24,8 @@ const CATEGORY_LABELS: Record<string, string> = {
   company: '公司',
   industry: '行业',
   financial: '财务',
-  news: '新闻'
+  news: '新闻',
+  social_media: '社媒'
 };
 
 const ResearchBriefings = ({
@@ -64,8 +66,8 @@ const ResearchBriefings = ({
       <div className={`overflow-hidden transition-all duration-500 ease-in-out ${
         isExpanded ? 'mt-6 max-h-[5000px] opacity-100' : 'max-h-0 opacity-0'
       }`}>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 px-1">
-          {['company', 'industry', 'financial', 'news'].map((category) => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 px-1">
+          {['company', 'industry', 'financial', 'news', 'social_media'].map((category) => {
             const isComplete = briefingStatus[category as keyof BriefingStatus];
             const hasContent = !!briefingContents[category];
             const isSelected = expandedBriefing === category;

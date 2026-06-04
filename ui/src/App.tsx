@@ -36,24 +36,23 @@ function App() {
     industry: { total: number; enriched: number };
     financial: { total: number; enriched: number };
     news: { total: number; enriched: number };
+    social_media: { total: number; enriched: number };
   } | undefined>(undefined);
   const [briefingStatus, setBriefingStatus] = useState({
     company: false,
     industry: false,
     financial: false,
-    news: false
+    news: false,
+    social_media: false
   });
   const [briefingContents, setBriefingContents] = useState<Record<string, string>>({});
   const [curationDetails, setCurationDetails] = useState<Record<string, Array<{url: string; title: string; score: number; kept: boolean}>>>({});
   const [isEnrichmentExpanded, setIsEnrichmentExpanded] = useState(true);
   const [isBriefingExpanded, setIsBriefingExpanded] = useState(true);
   const [hasScrolledToStatus, setHasScrolledToStatus] = useState(false);
-  const [activityLog, setActivityLog] = useState<Array<{id: number; type: string; source?: string; message: string}>>([]);
   const [isReportStreaming, setIsReportStreaming] = useState(false);
   const latestStatusRef = useRef<ResearchStatusType | null>(null);
   const streamSettledRef = useRef(false);
-  let _activityIdCounter = 0;
-  const nextLogId = () => { _activityIdCounter += 1; return Date.now() + _activityIdCounter; };
   const [loaderColor, setLoaderColor] = useState("#468BFF");
   
   // Scroll helper function
@@ -110,7 +109,8 @@ function App() {
         company: false,
         industry: false,
         financial: false,
-        news: false
+        news: false,
+        social_media: false
       });
       setBriefingContents({});
       setCurationDetails({});
@@ -119,7 +119,6 @@ function App() {
       setIsBriefingExpanded(true);
       setHasScrolledToStatus(false);
       setIsReportStreaming(false);
-      setActivityLog([]);
       setIsResetting(false);
     }, 300);
   };
@@ -462,12 +461,7 @@ function App() {
             message: data.message || '收到阶段警告'
           });
         } else if (data.type === 'scrape_source' || data.type === 'llm_call' || data.type === 'llm_status' || data.type === 'tavily_search') {
-          setActivityLog(prev => [...prev, {
-            id: Date.now() + Math.random(),
-            type: data.type,
-            source: data.source,
-            message: data.message || ''
-          }]);
+          // Activity log events - ignored
         } else if (data.type === 'curation_details') {
           // Store all URLs with their kept/rejected status for a category
           if (data.category && data.all_urls) {
@@ -538,7 +532,7 @@ function App() {
     }
 
     setIsResearching(true);
-    setOriginalCompanyName(formData.companyName);
+    setOriginalCompanyName(formData.companyName || formData.companyUrl);
     setStatus({
       step: "处理中",
       message: formData.mode === 'quick' ? "正在快速分析..." : "正在启动深度研究..."
@@ -552,7 +546,7 @@ function App() {
       : undefined;
 
     const requestData = {
-      company: formData.companyName,
+      company: formData.companyName || undefined,
       company_url: formattedCompanyUrl,
       industry: formData.companyIndustry || undefined,
       hq_location: formData.companyHq || undefined,
@@ -822,26 +816,7 @@ function App() {
                 )}
               </div>
 
-              {/* Activity Log */}
-              {activityLog.length > 0 && (
-                <div className={`${glassStyle.card} !p-4 ${isResetting ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}>
-                  <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">实时日志</h3>
-                  <div className="max-h-40 overflow-y-auto space-y-1 text-[11px] font-mono">
-                    {activityLog.slice(-20).map((entry) => (
-                      <div key={entry.id} className={`flex items-start gap-1 ${
-                        entry.type === 'llm_call' ? 'text-purple-600' :
-                        entry.type === 'llm_status' ? 'text-slate-500' :
-                        entry.source === 'custom' ? 'text-green-600' :
-                        entry.type === 'tavily_search' ? 'text-blue-600' :
-                        'text-gray-500'
-                      }`}>
-                        <span className="flex-shrink-0 opacity-60">{entry.type === 'llm_call' || entry.type === 'llm_status' ? '●' : '○'}</span>
-                        <span className="break-all leading-tight">{entry.message}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+
             </div>
           </div>
         )}

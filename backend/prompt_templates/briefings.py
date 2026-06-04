@@ -175,6 +175,46 @@ Key requirements:
 5. If a section has no supporting evidence in the documents, write "* 在现有资料中未找到相关信息" for that section.
 6. Provide only the briefing. Do not provide explanations or commentary.
 7. IMPORTANT: After each fact/sentence, add an inline citation linking to the source URL in the format [来源](url). Use the Source URL provided with each document. Example: * 公司宣布新合作 [来源](https://example.com/news)
+8. 时效性要求：只收录有明确日期（发布日期、新闻日期）的动态信息。如果文档中没有提供日期，或来源只是产品页面/公司官网的静态页面（没有新闻发布时间），则不要将其归入"近期动态"。产品页面本身不等于"新品发布"——除非文档中明确提到了上线/发布日期。
+""" + _NO_HALLUCINATION
+
+
+SOCIAL_MEDIA_BRIEFING_PROMPT = """Create a focused, yet comprehensive social media briefing for {company}, a {industry} company based in {hq_location}.
+Key requirements:
+1. Output the entire briefing in Chinese (简体中文). All content must be written in Chinese.
+2. Structure using these headers and bullet points:
+
+### 社媒账号与粉丝基数
+* List official social media accounts found (LinkedIn, Twitter/X, Instagram, Facebook, TikTok, WeChat, Douyin)
+* Include follower counts or engagement metrics if available
+* Note account verification status and posting frequency
+
+### 最近社媒动态 (过去3个月)
+* List recent posts, announcements, or content updates
+* Highlight key messages or promotional campaigns
+* Note customer engagement and response rates
+* Identify trending topics or hashtags used by the company
+
+### 用户评论与品牌声誉
+* Summarize customer sentiment from social comments
+* Note common praise points or complaints
+* Highlight positive testimonials or user-generated content
+* Identify potential pain points mentioned by customers
+
+### 合作与影响者营销
+* List any influencer partnerships or sponsored content
+* Identify brand ambassadors or thought leaders
+* Note collaborative content with other brands or creators
+
+### 社媒营销策略洞察
+* Identify content themes and posting patterns
+* Note engagement tactics or promotional strategies
+* Suggest content angles for partnership opportunities
+
+3. One fact per bullet point
+4. If a section has no supporting evidence in the documents, write "* 在现有资料中未找到相关信息" for that section.
+5. Provide only the briefing. Do not provide explanations or commentary.
+6. IMPORTANT: After each fact/sentence, add an inline citation linking to the source URL in the format [来源](url). Use the Source URL provided with each document. Example: * LinkedIn粉丝数10万+ [来源](https://example.com/linkedin)
 """ + _NO_HALLUCINATION
 
 

@@ -56,14 +56,51 @@ if mongo_uri := os.getenv("MONGODB_URI"):
         logger.warning(f"Failed to initialize MongoDB: {e}. Continuing without persistence.")
 
 class ResearchRequest(BaseModel):
-    company: str
+    company: str | None = None
     company_url: str | None = None
     industry: str | None = None
     hq_location: str | None = None
+    
+    def validate_input(self):
+        """Validate that at least company name or URL is provided."""
+        if not self.company and not self.company_url:
+            raise ValueError("Must provide either company name or company URL")
+        return True
 
 class PDFGenerationRequest(BaseModel):
     report_content: str
     company_name: str | None = None
+
+class CompanyInfoExtractionRequest(BaseModel):
+    company_url: str
+
+@app.post("/extract-company-info")
+async def extract_company_info(data: CompanyInfoExtractionRequest):
+    """Extract company name, industry, and location from website URL using AI."""
+    try:
+        from backend.nodes.company_info_extractor import CompanyInfoExtractor
+        
+        logger.info(f"Extracting company info from {data.company_url}")
+        
+        extractor = CompanyInfoExtractor()
+        result = await extractor.extract_from_url(data.company_url)
+        
+        response = JSONResponse(content=result)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        return response
+        
+    except Exception as e:
+        logger.error(f"Error extracting company info: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "message": f"信息提取失败：{str(e)}",
+                "company_name": "",
+                "industry": "",
+                "hq_location": "",
+            }
+        )
 
 @app.options("/research")
 async def preflight():
@@ -76,6 +113,41 @@ async def preflight():
 @app.post("/research")
 async def research(data: ResearchRequest):
     try:
+        # Validate input
+        data.validate_input()
+        
+        # If company name is missing but URL is provided, extract company info
+        if not data.company and data.company_url:
+            logger.info(f"No company name provided, extracting from URL: {data.company_url}")
+            # First try: extract from domain name directly (fast, no LLM needed)
+            from urllib.parse import urlparse
+            parsed = urlparse(data.company_url if '://' in data.company_url else f'https://{data.company_url}')
+            domain = parsed.hostname or ''
+            # Remove www. and TLD to get a rough company name
+            domain_name = domain.replace('www.', '').split('.')[0] if domain else ''
+            
+            # Try LLM-based extraction for better results
+            try:
+                from backend.nodes.company_info_extractor import CompanyInfoExtractor
+                extractor = CompanyInfoExtractor()
+                extract_result = await extractor.extract_from_url(data.company_url)
+                
+                if extract_result["success"] and extract_result["company_name"]:
+                    data.company = extract_result["company_name"]
+                    if not data.industry and extract_result["industry"]:
+                        data.industry = extract_result["industry"]
+                    if not data.hq_location and extract_result["hq_location"]:
+                        data.hq_location = extract_result["hq_location"]
+                    logger.info(f"Extracted company info via LLM: name={data.company}, industry={data.industry}, hq={data.hq_location}")
+                else:
+                    # Fallback: use domain name
+                    data.company = domain_name.capitalize() if domain_name else "Unknown"
+                    logger.info(f"LLM extraction failed, using domain name: {data.company}")
+            except Exception as e:
+                # Fallback: use domain name
+                data.company = domain_name.capitalize() if domain_name else "Unknown"
+                logger.warning(f"LLM extraction error, using domain name: {data.company}. Error: {e}")
+        
         logger.info(f"Received research request for {data.company}")
         job_id = str(uuid.uuid4())
         job_status[job_id].update({
@@ -102,6 +174,9 @@ async def research(data: ResearchRequest):
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         return response
 
+    except ValueError as e:
+        logger.error(f"Validation error: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error initiating research: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -502,4 +577,4 @@ async def translate_report(data: TranslateRequest):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=9999)

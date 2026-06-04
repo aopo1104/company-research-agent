@@ -3,6 +3,15 @@ Search query generation prompts for all four researcher nodes.
 These prompts generate targeted search queries for Tavily.
 """
 
+# ============================================================
+# RESEARCHER SYSTEM MESSAGE - shared by all four analyzers
+# ============================================================
+RESEARCHER_SYSTEM_MESSAGE = """You are researching {company}, a company in the {industry} industry, headquartered in {hq_location}.
+
+【Seller Context】You are conducting this research on behalf of LoctekMotion (乐歌股份, www.loctekmotion.com), a Chinese ergonomic lifting product manufacturer.
+LoctekMotion's product categories: Standing Desk, TV Mount, Electric Sofa, Electric Bed, Chair, Monitor Stand, Lifting Platform, Fitness Equipment, Meeting Pod.
+Your research goal: Identify whether {company}'s audience has a real need for any of these products, find sales channels, discover pain points, and uncover promotion opportunities for LoctekMotion to sell TO or THROUGH {company}."""
+
 QUERY_FORMAT_GUIDELINES = """
 Format your response as a JSON object with the following structure:
 {{
@@ -13,6 +22,10 @@ Format your response as a JSON object with the following structure:
   ]
 }}
 Only include the JSON object in your response, no other text.
+
+Hard requirements for generated queries:
+1) Include at least 2 website-targeted queries using site: operator (e.g. site:company.com product category solutions).
+2) Include at least 3 queries explicitly containing product/category terms such as product, products, category, categories, solutions, catalog, collections.
 """
 
 COMPANY_ANALYZER_QUERY_PROMPT = """You are a B2B sales research expert for LoctekMotion (乐歌股份), a Chinese ergonomic lifting product manufacturer.
@@ -36,6 +49,8 @@ Examples of good queries:
 - "{company} OEM ODM manufacturing capability"
 - "{company} China procurement import records trade data"
 - "{company} products pricing official website"
+- "site:{company} product categories"
+- "site:{company} solutions catalog collections"
 
 """ + QUERY_FORMAT_GUIDELINES
 
@@ -59,6 +74,7 @@ Examples of good queries:
 - "{company} China import customs records sourcing"
 - "{company} supplier manufacturer China trade data"
 - "{company} Canton Fair Global Sources Alibaba sourcing"
+- "site:{company} procurement suppliers product lines"
 
 """ + QUERY_FORMAT_GUIDELINES
 
@@ -75,6 +91,7 @@ Focus areas for queries:
 6. Regulatory or compliance factors
 7. Buyer behavior and purchasing patterns
 8. Opportunities for ergonomic/lifting product suppliers in this market
+9. Product/category structures used by competitors in this industry
 
 """ + QUERY_FORMAT_GUIDELINES
 
@@ -93,3 +110,30 @@ Focus areas for queries:
 8. Social media buzz or trending content related to {company}
 
 """ + QUERY_FORMAT_GUIDELINES
+
+
+SOCIAL_MEDIA_ANALYZER_QUERY_PROMPT = """You are a B2B sales research expert for LoctekMotion (乐歌股份).
+Your task: Generate 8 targeted search queries to find social media content and digital presence for {company} ({industry}, {hq_location}).
+
+Focus areas for queries:
+1. Social media official accounts (LinkedIn, Twitter/X, Instagram, Facebook, TikTok, WeChat, Douyin)
+2. Recent social media posts or updates (last 3 months)
+3. Customer engagement and comments on social platforms
+4. Influencer mentions or partnerships
+5. Social media follower count, engagement rate, content strategy
+6. User reviews on social platforms or review sites
+7. Community discussions or forum mentions
+8. Viral content or trending topics related to {company}
+
+Examples of good queries:
+- "{company} LinkedIn company page followers engagement"
+- "{company} Twitter X official account posts updates"
+- "{company} Instagram Facebook official accounts social media"
+- "{company} TikTok Douyin 抖音 official account"
+- "{company} social media strategy content marketing"
+- "{company} customer reviews Trustpilot Google reviews social"
+- "site:linkedin.com {company} company profile"
+- "site:twitter.com {company} official account"
+
+""" + QUERY_FORMAT_GUIDELINES
+

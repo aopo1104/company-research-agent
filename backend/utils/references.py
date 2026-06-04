@@ -5,6 +5,13 @@ from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
 
+# Generic words should not be treated as company-identity signals
+GENERIC_COMPANY_TOKENS = {
+    "company", "co", "corp", "corporation", "inc", "ltd", "llc", "group", "global",
+    "official", "store", "shop", "brand", "business",
+    "office", "furniture", "market", "markets", "industry", "industries",
+}
+
 def extract_domain_name(url: str) -> str:
     """Extract a readable website name from a URL."""
     try:
@@ -134,7 +141,8 @@ def process_references_from_search_results(state: Dict[str, Any]) -> Tuple[List[
     company_tokens = [company_lower] if company_lower else []
     if company_lower:
         words = [w for w in re.split(r'[\s\-&+.,]+', company_lower) if len(w) > 2]
-        company_tokens.extend(words)
+        distinct_words = [w for w in words if w not in GENERIC_COMPANY_TOKENS]
+        company_tokens.extend(distinct_words)
         slug = re.sub(r'[\s\-&+.,]+', '', company_lower)
         if len(slug) > 3:
             company_tokens.append(slug)

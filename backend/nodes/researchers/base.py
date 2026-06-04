@@ -1,6 +1,50 @@
+"""
+================================================================================
+base.py - 研究节点基类 (Stage 2-3)
+================================================================================
+定义查询生成和文档搜索的通用逻辑
+
+继承关系:
+  BaseResearcher (本文件)
+    ├── CompanyAnalyzer (company.py) - 公司信息
+    ├── IndustryAnalyzer (industry.py) - 行业分析
+    ├── FinancialAnalyst (financial.py) - 财务分析
+    └── NewsScanner (news.py) - 新闻扫描
+
+流程:
+  1. generate_queries(): 使用Azure GPT-4o生成4条搜索查询
+  2. search_documents(): 并行执行Tavily搜索
+  3. run(): 汇总查询和文档到state
+
+各分析器使用不同的:
+  - analyst_type: 用于标识分析器类型
+  - prompt: 特定领域的查询生成提示
+  - topic: Tavily搜索的专题 (可选: news, finance)
+  
+搜索结果数据结构:
+  {
+    "url": "https://...",
+    "title": "...",
+    "content": "...",  # 摘要 (不是完整内容)
+    "score": 0.92,     # Tavily相关性评分
+    "query": "..."     # 来源查询
+  }
+
+典型运行:
+  4个节点并行执行
+  ├─ CompanyAnalyzer: 生成4个查询 → 执行搜索 → 收集20个文档
+  ├─ IndustryAnalyzer: 生成4个查询 → 执行搜索 → 收集20个文档
+  ├─ FinancialAnalyst: 生成4个查询 (topic=finance) → 收集20个文档
+  └─ NewsScanner: 生成4个查询 (topic=news) → 收集20个文档
+  
+  总计: 16个查询 × 5结果 = 80个文档
+"""
+
 import asyncio
+import json
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List
 
@@ -11,12 +55,18 @@ from tavily import AsyncTavilyClient
 from ...classes import ResearchState
 from ...classes.state import job_status
 from ...utils.references import clean_title
-from ...prompts import QUERY_FORMAT_GUIDELINES
+from ...prompts import QUERY_FORMAT_GUIDELINES, RESEARCHER_SYSTEM_MESSAGE
 
 logger = logging.getLogger(__name__)
 
 class BaseResearcher:
     def __init__(self):
+        """初始化研究节点
+        
+        配置:
+          - Tavily AsyncClient: 异步搜索API
+          - Azure GPT-4o: LangChain集成，用于查询生成
+        """
         tavily_key = os.getenv("TAVILY_API_KEY")
         azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
         azure_instance = os.getenv("AZURE_OPENAI_API_INSTANCE_NAME")
@@ -39,13 +89,59 @@ class BaseResearcher:
 
     @property
     def analyst_type(self) -> str:
+        """分析器类型标识 (由子类覆写设置)"""
         if not hasattr(self, '_analyst_type'):
             raise ValueError("Analyst type not set by subclass")
         return self._analyst_type
 
     @analyst_type.setter
     def analyst_type(self, value: str):
+        """设置分析器类型标识
+        
+        子类应设置为:
+          - "company_analyzer"
+          - "industry_analyzer"
+          - "financial_analyst"
+          - "news_scanner"
+        """
         self._analyst_type = value
+
+    def _parse_queries_from_json(self, text: str) -> List[str]:
+        """Parse JSON-formatted LLM output to extract query strings.
+        
+        Handles outputs like:
+          ```json
+          {"queries": [{"query": "...", "category": "..."}, ...]}
+          ```
+        Returns list of query strings, or empty list if parsing fails.
+        """
+        # Strip markdown code fences
+        cleaned = re.sub(r'```(?:json)?\s*', '', text).strip()
+        cleaned = cleaned.rstrip('`').strip()
+        
+        try:
+            data = json.loads(cleaned)
+            if isinstance(data, dict) and 'queries' in data:
+                return [item['query'] for item in data['queries'] if isinstance(item, dict) and 'query' in item]
+        except (json.JSONDecodeError, KeyError, TypeError):
+            pass
+        
+        # Fallback: try to find JSON object anywhere in text
+        json_match = re.search(r'\{[^{}]*"queries"\s*:\s*\[.*?\]\s*\}', cleaned, re.DOTALL)
+        if json_match:
+            try:
+                data = json.loads(json_match.group())
+                if 'queries' in data:
+                    return [item['query'] for item in data['queries'] if isinstance(item, dict) and 'query' in item]
+            except (json.JSONDecodeError, KeyError, TypeError):
+                pass
+        
+        # Last resort: extract "query" values with regex
+        query_matches = re.findall(r'"query"\s*:\s*"([^"]+)"', text)
+        if query_matches:
+            return query_matches
+        
+        return []
 
     async def generate_queries(self, state: Dict, prompt: str):
         """Generate search queries and yield events as they're created"""
@@ -64,11 +160,7 @@ class BaseResearcher:
             
             # Create prompt template using LangChain
             query_prompt = ChatPromptTemplate.from_messages([
-                ("system", """You are researching {company}, a company in the {industry} industry, headquartered in {hq_location}.
-
-【Seller Context】You are conducting this research on behalf of LoctekMotion (乐歌股份, www.loctekmotion.com), a Chinese ergonomic lifting product manufacturer.
-LoctekMotion's product categories: Standing Desk, TV Mount, Electric Sofa, Electric Bed, Chair, Monitor Stand, Lifting Platform, Fitness Equipment, Meeting Pod.
-Your research goal: Identify whether {company}'s audience has a real need for any of these products, find sales channels, discover pain points, and uncover promotion opportunities for LoctekMotion to sell TO or THROUGH {company}."""),
+                ("system", RESEARCHER_SYSTEM_MESSAGE),
                 ("user", """Researching {company} in {year}, as of {date}.
 {task_prompt}
 {format_guidelines}""")
@@ -160,10 +252,21 @@ Your research goal: Identify whether {company}'s audience has a real need for an
                     "category": self.analyst_type
                 }
             
+            # Parse JSON output to extract actual query strings
+            # The LLM outputs JSON like: {"queries": [{"query": "...", "category": "..."}]}
+            full_text = "\n".join(queries)
+            parsed_queries = self._parse_queries_from_json(full_text)
+            
+            if parsed_queries:
+                queries = parsed_queries
+            else:
+                # Fallback: filter out obvious non-query lines
+                queries = [q for q in queries if len(q) > 5 and not q.startswith(('```', '{', '}', '"queries"', ']'))]
+            
             if not queries:
                 raise ValueError(f"No queries generated for {company}")
 
-            queries = queries[:4]  # Limit to 4 queries
+            queries = queries[:8]  # Limit to 8 queries
             logger.info(f"Final queries for {self.analyst_type}: {queries}")
             
             yield {"type": "queries_complete", "queries": queries, "count": len(queries)}

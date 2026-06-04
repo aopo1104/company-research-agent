@@ -77,9 +77,36 @@ const ResearchReport = ({
     }
   };
 
-  const displayReport = showTranslation && translatedReport
+  const rawReport = showTranslation && translatedReport
     ? translatedReport
     : output.details.report;
+
+  // Preprocess: normalize citation links to ensure ReactMarkdown parses them
+  const displayReport = (() => {
+    if (!rawReport) return '';
+    let text = rawReport;
+    // Remove zero-width spaces and other invisible chars between ] and (
+    text = text.replace(/\]\s*\u200B*\s*\(/g, '](');
+    // Fix cases where LLM escapes brackets: \[来源\](url) -> [来源](url)
+    text = text.replace(/\\\[来源\\\]\(/g, '[来源](');
+    // Fix [来源] (url) with space -> [来源](url)
+    text = text.replace(/\[来源\]\s+\(/g, '[来源](');
+    // Remove markdown code fence wrappers if the whole report is wrapped
+    text = text.replace(/^```(?:markdown)?\s*\n/i, '').replace(/\n```\s*$/i, '');
+    return text;
+  })();
+
+  // Debug: log report content to browser console for diagnosis
+  if (rawReport && typeof window !== 'undefined') {
+    console.log('[ResearchReport] Report length:', rawReport.length);
+    const citationMatches = rawReport.match(/\[来源\]/g);
+    console.log('[ResearchReport] Citation count:', citationMatches?.length || 0);
+    // Check if there are invisible chars around citations
+    const rawCitations = rawReport.match(/\][^\(]{0,5}\(/g);
+    if (rawCitations) {
+      console.log('[ResearchReport] Chars between ] and (:', rawCitations.map(s => JSON.stringify(s)));
+    }
+  }
 
   return (
     <div 
@@ -146,10 +173,9 @@ const ResearchReport = ({
           </>
         )}
       </div>
-      <div className="prose prose-invert prose-lg max-w-none">
+      <div className="prose prose-lg max-w-none overflow-x-hidden break-words">
         <div className="mt-4">
           <ReactMarkdown
-            rehypePlugins={[rehypeRaw]}
             remarkPlugins={[remarkGfm]}
             components={{
               div: ({node, ...props}) => (
@@ -162,7 +188,7 @@ const ResearchReport = ({
                 return (
                   <div>
                     <h1 
-                      className={`font-bold text-gray-900 break-words whitespace-pre-wrap ${isFirstH1 ? 'text-5xl mb-10 mt-4 max-w-[calc(100%-8rem)]' : 'text-3xl mb-6'}`} 
+                      className={`font-bold text-gray-900 break-words whitespace-pre-wrap ${isFirstH1 ? 'text-3xl md:text-5xl mb-8 mt-4' : 'text-2xl md:text-3xl mb-6'}`} 
                       {...props} 
                     >
                       {children}
@@ -195,53 +221,18 @@ const ResearchReport = ({
                   );
                 }
                 
-                const isBulletLabel = text.startsWith('•') && text.includes(':');
-                if (isBulletLabel) {
-                  const [label, content] = text.split(':');
-                  return (
-                    <div className="text-gray-800 my-2">
-                      <span className="font-semibold text-gray-900">
-                        {label.replace('•', '').trim()}:
-                      </span>
-                      {content}
-                    </div>
-                  );
-                }
-                
-                const urlRegex = /(https?:\/\/[^\s<>"]+)/g;
-                if (urlRegex.test(text)) {
-                  const parts = text.split(urlRegex);
-                  return (
-                    <p className="text-gray-800 my-2" {...props}>
-                      {parts.map((part, i) => 
-                        urlRegex.test(part) ? (
-                          <a 
-                            key={i}
-                            href={part}
-                            className="text-[#468BFF] hover:text-[#8FBCFA] underline decoration-[#468BFF] hover:decoration-[#8FBCFA] cursor-pointer transition-colors"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {part}
-                          </a>
-                        ) : part
-                      )}
-                    </p>
-                  );
-                }
-                
-                return <p className="text-gray-800 my-2" {...props}>{children}</p>;
+                return <p className="text-gray-800 my-2 whitespace-pre-wrap break-words" {...props}>{children}</p>;
               },
               ul: ({node, ...props}) => (
-                <ul className="text-gray-800 space-y-1 list-disc pl-6" {...props} />
+                <ul className="text-gray-800 space-y-1 list-disc pl-6 break-words" {...props} />
               ),
               li: ({node, ...props}) => (
-                <li className="text-gray-800" {...props} />
+                <li className="text-gray-800 break-words" {...props} />
               ),
               a: ({node, href, ...props}) => (
                 <a 
                   href={href}
-                  className="text-[#468BFF] hover:text-[#8FBCFA] underline decoration-[#468BFF] hover:decoration-[#8FBCFA] cursor-pointer transition-colors" 
+                  className="text-[#468BFF] hover:text-[#8FBCFA] underline decoration-[#468BFF] hover:decoration-[#8FBCFA] cursor-pointer transition-colors break-all" 
                   target="_blank"
                   rel="noopener noreferrer"
                   {...props} 

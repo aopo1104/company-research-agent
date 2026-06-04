@@ -15,6 +15,7 @@ export type EnrichmentCounts = {
   industry: { total: number; enriched: number };
   financial: { total: number; enriched: number };
   news: { total: number; enriched: number };
+  social_media: { total: number; enriched: number };
 };
 
 export type GlassStyle = {

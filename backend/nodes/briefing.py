@@ -1,3 +1,32 @@
+"""
+================================================================================
+briefing.py - 简报生成阶段 (Stage 7)
+================================================================================
+使用Azure GPT-4o为4个类别生成中文简报
+
+输入: curated_*_data (~50个完整文档)
+输出: company_briefing, industry_briefing, financial_briefing, news_briefing
+
+4个简报类别:
+  1. Company: 公司基本信息、产品、团队、商业模式
+  2. Industry: 市场规模、竞争、趋势、挑战
+  3. Financial: 融资历史、财务指标、估值、采购渠道
+  4. News: 最近新闻、公告、合作、奖项
+
+防幻觉设计:
+  - 所有简报包含_NO_HALLUCINATION规则：基于文档内容，附引用[来源](url)
+  - 采购渠道需要硬证据，无法找到则说"未找到明确的采购渠道"
+  - 严禁捏造数据、虚构事件、张冠李戴
+
+文档处理:
+  - 官网页面优先 (source='company_website') - 保证准确性
+  - 按Tavily分数排序 - 高分优先
+  - 单文档截断8000字符 - 避免过长
+  - 总长度120000字符 - LLM上下文限制
+
+典型简报: 1000-2000字/类别
+"""
+
 import asyncio
 import logging
 import os
@@ -14,16 +43,21 @@ from ..prompts import (
     INDUSTRY_BRIEFING_PROMPT,
     FINANCIAL_BRIEFING_PROMPT,
     NEWS_BRIEFING_PROMPT,
+    SOCIAL_MEDIA_BRIEFING_PROMPT,
     BRIEFING_ANALYSIS_INSTRUCTION
 )
 
 logger = logging.getLogger(__name__)
 
 class Briefing:
-    """Creates briefings for each research category and updates the ResearchState."""
+    """简报生成器 - 为4个研究类别生成中文简报"""
     
     def __init__(self) -> None:
-        self.max_doc_length = 8000  # Maximum document content length
+        """初始化Briefing，配置Azure GPT-4o
+        
+        max_doc_length: 单个文档最大内容长度 (8000字符)
+        """
+        self.max_doc_length = 8000  # 单文档最大长度
         azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
         azure_instance = os.getenv("AZURE_OPENAI_API_INSTANCE_NAME")
         azure_deployment = os.getenv("AZURE_OPENAI_API_DEPLOYMENT_NAME")
@@ -32,51 +66,71 @@ class Briefing:
         if not azure_api_key or not azure_instance or not azure_deployment:
             raise ValueError("Missing Azure OpenAI configuration: AZURE_OPENAI_API_KEY, AZURE_OPENAI_API_INSTANCE_NAME, or AZURE_OPENAI_API_DEPLOYMENT_NAME")
         
-        # Configure LangChain AzureChatOpenAI
+        # 配置LangChain Azure OpenAI客户端
         self.llm = AzureChatOpenAI(
             azure_endpoint=f"https://{azure_instance}.openai.azure.com",
             azure_deployment=azure_deployment,
             api_version=azure_version,
             api_key=azure_api_key,
-            temperature=0,
+            temperature=0,  # 确定性输出
             max_retries=0
         )
 
     def _get_category_prompt(self, category: str) -> str:
-        """Get the category-specific prompt template"""
+        """获取类别对应的Prompt模板
+        
+        Args:
+            category: company/industry/financial/news
+            
+        Returns:
+            对应的Prompt字符串
+        """
         prompts = {
             'company': COMPANY_BRIEFING_PROMPT,
             'industry': INDUSTRY_BRIEFING_PROMPT,
             'financial': FINANCIAL_BRIEFING_PROMPT,
             'news': NEWS_BRIEFING_PROMPT,
+            'social_media': SOCIAL_MEDIA_BRIEFING_PROMPT,
         }
         return prompts.get(category, 
                           "Create a focused, informative and insightful research briefing on the company: {company} in the {industry} industry based on the provided documents.")
     
     def _prepare_documents(self, docs: Union[Dict[str, Any], List[Dict[str, Any]]]) -> str:
-        """Prepare and format documents for briefing generation"""
-        # Normalize docs to list of (url, doc) tuples
-        items = list(docs.items()) if isinstance(docs, dict) else [
-            (doc.get('url', f'doc_{i}'), doc) for i, doc in enumerate(docs)
-        ]
+        """准备并格式化文档供简报生成
         
-        # Sort: company website pages first (most valuable first-party data), then by score
-        sorted_items = sorted(
-            items, 
-            key=lambda x: (
-                1 if x[1].get('source') == 'company_website' else 0,
-                float(x[1].get('evaluation', {}).get('overall_score', '0'))
-            ),
-            reverse=True
-        )
+        文档排序优先级:
+          1. 官网页面优先 (source='company_website') - 第一方信息最可信
+          2. Tavily分数降序 (high score = high relevance)
+          
+        长度限制:
+          - 单文档: 8000字符
+          - 总长度: 120000字符
         
-        # Format documents with length limits
+        Args:
+            docs: 文档字典 或 文档列表
+            
+        Returns:
+            格式化的文档文本 (Markdown格式)
+        """
+        # Convert dict to list if needed
+        if isinstance(docs, dict):
+            docs_list = list(docs.values())
+        else:
+            docs_list = docs if isinstance(docs, list) else []
+        
+        if not docs_list:
+            return ""
+        
+        # Sort: company_website first, then by score descending
+        docs_list.sort(key=lambda d: (-int(d.get('source') == 'company_website'), -float(d.get('score', 0))))
+        
         doc_texts = []
         total_length = 0
-        for url, doc in sorted_items:
-            title = doc.get('title', '')
-            source_url = doc.get('url', url) if isinstance(doc, dict) else url
-            content = doc.get('raw_content') or doc.get('content', '')
+        
+        for doc in docs_list:
+            source_url = doc.get('url', '')
+            title = doc.get('title', '') or doc.get('url', '')
+            content = doc.get('raw_content', '') or doc.get('content', '')
             
             if len(content) > self.max_doc_length:
                 content = content[:self.max_doc_length] + "... [content truncated]"
@@ -209,7 +263,8 @@ class Briefing:
             'financial_data': ("financial", "financial_briefing"),
             'news_data': ("news", "news_briefing"),
             'industry_data': ("industry", "industry_briefing"),
-            'company_data': ("company", "company_briefing")
+            'company_data': ("company", "company_briefing"),
+            'social_media_data': ("social_media", "social_media_briefing")
         }
         
         briefings = {}
@@ -234,7 +289,7 @@ class Briefing:
 
         # Process briefings in parallel with rate limiting
         if briefing_tasks:
-            briefing_semaphore = asyncio.Semaphore(2)  # Limit to 2 concurrent briefings
+            briefing_semaphore = asyncio.Semaphore(3)  # Limit to 3 concurrent briefings
             
             async def process_briefing(task: Dict[str, Any]) -> Dict[str, Any]:
                 """Process a single briefing with rate limiting."""

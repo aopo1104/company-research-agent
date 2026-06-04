@@ -12,6 +12,28 @@ LOW_VALUE_HOSTS = {
 LOW_VALUE_PATH_PREFIXES = (
     "/docs",
     "/editions",
+    "/privacy",
+    "/terms",
+    "/careers",
+    "/jobs",
+    "/login",
+    "/signin",
+    "/account",
+)
+
+FOCUS_PATH_KEYWORDS = (
+    "product",
+    "products",
+    "category",
+    "categories",
+    "solution",
+    "solutions",
+    "catalog",
+    "collection",
+    "collections",
+    "portfolio",
+    "shop",
+    "store",
 )
 
 
@@ -31,3 +53,13 @@ def is_low_value_url(url: str) -> bool:
         return True
 
     return path.startswith(LOW_VALUE_PATH_PREFIXES)
+
+
+def is_focus_url(url: str, focus_keywords: tuple[str, ...] = FOCUS_PATH_KEYWORDS) -> bool:
+    """Return True if URL path likely contains product/category-oriented pages."""
+    if not url:
+        return False
+
+    parsed = urlparse(url if url.startswith(("http://", "https://")) else f"https://{url}")
+    path = parsed.path.lower()
+    return any(keyword in path for keyword in focus_keywords)
