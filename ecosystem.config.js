@@ -1,6 +1,7 @@
 const path = require('path');
 
 const ROOT = __dirname;
+const NPM_CMD = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 
 module.exports = {
   apps: [
@@ -22,8 +23,9 @@ module.exports = {
     },
     {
       name: 'company-research-frontend',
-      script: 'npm',
+      script: NPM_CMD,
       args: 'run dev',
+      interpreter: 'none',
       cwd: path.join(ROOT, 'ui'),
       autorestart: true,
       watch: ['src', 'public', 'package.json'],
