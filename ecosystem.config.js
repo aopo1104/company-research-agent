@@ -10,6 +10,7 @@ module.exports = {
       script: path.join(ROOT, '.venv', 'Scripts', 'python.exe'),
       args: 'application.py',
       cwd: ROOT,
+      windowsHide: true,
       env: {
         NODE_ENV: 'development'
       },
@@ -26,6 +27,7 @@ module.exports = {
       script: NPM_CMD,
       args: 'run dev',
       interpreter: 'none',
+      windowsHide: true,
       cwd: path.join(ROOT, 'ui'),
       autorestart: true,
       watch: ['src', 'public', 'package.json'],
