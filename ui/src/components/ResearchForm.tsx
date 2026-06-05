@@ -70,6 +70,8 @@ const ResearchForm = ({
   const [showHistory, setShowHistory] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionError, setExtractionError] = useState<string | null>(null);
+  const [secretClicks, setSecretClicks] = useState(0);
+  const [showHistoryButton, setShowHistoryButton] = useState(false);
   
   // Animation states
   const [showExampleSuggestion, setShowExampleSuggestion] = useState(true);
@@ -78,6 +80,7 @@ const ResearchForm = ({
   // Refs for form fields for animation
   const formRef = useRef<HTMLDivElement>(null);
   const exampleRef = useRef<HTMLDivElement>(null);
+  const secretClickTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   // Hide example suggestion when form is filled
   useEffect(() => {
@@ -106,6 +109,26 @@ const ResearchForm = ({
       setShowExampleSuggestion(true);
     }
   }, [isResearching, isExampleAnimating, formData.companyUrl]);
+
+  // Handle secret clicks to reveal history button (5 clicks on blank area)
+  const handleSecretClick = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('input, button, [data-history-container]')) {
+      return; // Don't count clicks on form elements
+    }
+    setSecretClicks(prev => {
+      const newCount = prev + 1;
+      if (newCount >= 5) {
+        setShowHistoryButton(true);
+        return 0; // Reset after showing
+      }
+      // Reset count after 5 seconds of inactivity
+      if (secretClickTimeoutRef.current) {
+        clearTimeout(secretClickTimeoutRef.current);
+      }
+      secretClickTimeoutRef.current = setTimeout(() => setSecretClicks(0), 5000);
+      return newCount;
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -228,7 +251,7 @@ const ResearchForm = ({
   };
 
   return (
-    <div className="relative" ref={formRef}>
+    <div className="relative" ref={formRef} onClick={handleSecretClick}>
       {/* Example Suggestion */}
       <ExamplePopup 
         visible={showExampleSuggestion}
@@ -371,8 +394,8 @@ const ResearchForm = ({
           </div>
 
           <div className="flex items-center justify-center gap-3 pt-2">
-            {/* History button */}
-            {history.length > 0 && (
+            {/* History button - hidden by default, revealed with 5 secret clicks */}
+            {history.length > 0 && showHistoryButton && (
               <div className="relative" data-history-container>
                 <button
                   type="button"
