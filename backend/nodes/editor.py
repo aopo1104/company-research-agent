@@ -182,7 +182,7 @@ class Editor:
             overlap = len(target_tokens & src_tokens)
             ratio = overlap / max(len(target_tokens), 1)
             best_ratio = max(best_ratio, ratio)
-            if ratio >= 0.35:
+            if ratio >= 0.20:  # 放宽: 35% → 20%，LLM改写句子词汇不完全同源
                 return True
 
         # If key entities (numbers/dates) exist, check they appear somewhere in sources
@@ -251,22 +251,14 @@ class Editor:
                 filtered.append(line)
                 continue
 
-            # Check if it contains specific factual claims (numbers, dates, money)
-            has_specific_claims = bool(re.search(r'\d{4}|\d+[%万亿]|\$[\d,.]+|USD|EUR|￥', stripped))
-            if has_specific_claims:
-                # Factual claim without citation - drop it
-                dropped += 1
-                continue
-
-            # General descriptive text without specific claims - keep if supported
+            # General descriptive text - keep if supported by briefings or within reasonable length
             if self._is_supported_by_briefings(line, source_lines):
                 filtered.append(line)
+            elif len(plain) <= 150:
+                # 放宽: 150字以内的描述性文本保留（避免删除LLM总结段落）
+                filtered.append(line)
             else:
-                # Keep if short enough to be connective text
-                if len(plain) <= 100:
-                    filtered.append(line)
-                else:
-                    dropped += 1
+                dropped += 1
 
         logger.info("Applied grounding gate: kept=%s dropped=%s", len(filtered), dropped)
         return "\n".join(filtered).strip()
@@ -374,12 +366,15 @@ class Editor:
 
             line_urls = [normalize_url(url) for url in self._extract_markdown_urls(line)]
             if not line_urls:
-                removed_no_citation += 1
+                # 放宽: 无引用的bullet保留，不再删除（LLM摘要性内容无法带具体URL）
+                cleaned_lines.append(line)
                 continue
 
             matched = [url for url in line_urls if url in allowed_urls]
             if not matched:
+                # 带引用但URL不在白名单 - 仍保留内容，只是不计入引用统计
                 removed_unsupported_citation += 1
+                cleaned_lines.append(line)
                 continue
 
             cleaned_lines.append(line)

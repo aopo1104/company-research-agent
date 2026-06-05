@@ -127,18 +127,26 @@ class GroundingNode:
                     "message": "🤖 LLM状态: 官网自研爬取阶段未调用LLM"
                 })
 
-                # 1) 广覆盖 + 2) 专项抓取 并行执行
+                # 1) 广覆盖 + 2) 专项抓取 并行执行，全局超时45秒防止慢站阻塞
                 focus_keywords = self._get_focus_keywords()
-                broad_scrape, focused_scrape = await asyncio.gather(
-                    crawl_site(url, max_pages=50, max_depth=1),
-                    crawl_site(
-                        url,
-                        max_pages=30,
-                        max_depth=1,
-                        focus_keywords=focus_keywords,
-                        strict_focus=True,
-                    ),
-                )
+                try:
+                    broad_scrape, focused_scrape = await asyncio.wait_for(
+                        asyncio.gather(
+                            crawl_site(url, max_pages=50, max_depth=1),
+                            crawl_site(
+                                url,
+                                max_pages=30,
+                                max_depth=1,
+                                focus_keywords=focus_keywords,
+                                strict_focus=True,
+                            ),
+                        ),
+                        timeout=45,
+                    )
+                except asyncio.TimeoutError:
+                    logger.warning(f"Crawl timed out (45s) for {url}, using partial results")
+                    broad_scrape = {}
+                    focused_scrape = {}
 
                 site_scrape = dict(broad_scrape)
                 focused_added = 0

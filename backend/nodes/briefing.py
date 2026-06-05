@@ -30,6 +30,7 @@ briefing.py - 简报生成阶段 (Stage 7)
 import asyncio
 import logging
 import os
+import random
 from typing import Any, Dict, List, Union
 
 from langchain_openai import AzureChatOpenAI
@@ -155,9 +156,10 @@ class Briefing:
 
     async def generate_category_briefing(
         self, docs: Union[Dict[str, Any], List[Dict[str, Any]]], 
-        category: str, context: Dict[str, Any]
+        category: str, context: Dict[str, Any],
     ):
         """Generate category briefing and yield events"""
+
         company = context.get('company', 'Unknown')
         industry = context.get('industry', 'Unknown')
         hq_location = context.get('hq_location', 'Unknown')
@@ -208,12 +210,28 @@ class Briefing:
                     "message": f"🤖 LLM调用: 生成 {category} 摘要"
                 })
             logger.info("Sending prompt to LLM")
-            content = await chain.ainvoke({
-                "category_prompt": category_prompt,
-                "instruction": BRIEFING_ANALYSIS_INSTRUCTION,
-                "documents": formatted_docs
-            })
-            
+
+            # Retry with exponential backoff on 429 rate-limit errors
+            max_retries = 4
+            content = None
+            for attempt in range(max_retries):
+                try:
+                    content = await chain.ainvoke({
+                        "category_prompt": category_prompt,
+                        "instruction": BRIEFING_ANALYSIS_INSTRUCTION,
+                        "documents": formatted_docs
+                    })
+                    break  # Success
+                except Exception as llm_err:
+                    err_str = str(llm_err)
+                    is_rate_limit = "429" in err_str or "too_many_requests" in err_str.lower() or "rate limit" in err_str.lower()
+                    if is_rate_limit and attempt < max_retries - 1:
+                        wait = (2 ** attempt) + random.uniform(0, 1)  # 1s, 2s, 4s + jitter
+                        logger.warning(f"[briefing] 429 rate limit for {category}, retry {attempt+1}/{max_retries-1} in {wait:.1f}s")
+                        await asyncio.sleep(wait)
+                    else:
+                        raise
+
             if not content:
                 logger.error(f"Empty response from LLM for {category} briefing")
                 yield {
@@ -296,17 +314,17 @@ class Briefing:
                 logger.info(f"No data available for {data_field}")
                 state[briefing_key] = ""
 
-        # Process briefings in parallel with rate limiting
+        # Process briefings with adaptive concurrency:
+        # Phase 1: all 5 in parallel; Phase 2: retry any 429-failed tasks serially
         if briefing_tasks:
-            briefing_semaphore = asyncio.Semaphore(5)  # All 5 briefings in parallel
-            
+            briefing_semaphore = asyncio.Semaphore(5)  # Start with full parallelism
+            failed_tasks: list = []  # Tasks that failed due to 429
+
             async def process_briefing(task: Dict[str, Any]) -> Dict[str, Any]:
-                """Process a single briefing with rate limiting."""
+                """Process a single briefing, track 429 failures for later retry."""
                 async with briefing_semaphore:
                     result = {'content': ''}
-                    
-                    # Consume events from briefing generation
-                    # Exceptions will propagate immediately (no catching)
+
                     async for event in self.generate_category_briefing(
                         task['curated_data'],
                         task['category'],
@@ -314,28 +332,76 @@ class Briefing:
                     ):
                         if isinstance(event, dict) and 'content' in event:
                             result = event
-                    
+
                     if result['content']:
                         briefings[task['category']] = result['content']
                         state[task['briefing_key']] = result['content']
                         logger.info(f"Completed {task['data_field']} briefing ({len(result['content'])} characters)")
                     else:
                         raise RuntimeError(f"Empty briefing generated for {task['data_field']}")
-                    
+
                     return {
                         'category': task['category'],
-                        'success': bool(result['content']),
-                        'length': len(result['content']) if result['content'] else 0
+                        'success': True,
+                        'length': len(result['content'])
                     }
 
-            # Process all briefings in parallel - exceptions will propagate and kill entire process
-            results = await asyncio.gather(*[
-                process_briefing(task) 
-                for task in briefing_tasks
-            ])
-            
+            # Phase 1: run all tasks in parallel
+            phase1_results = await asyncio.gather(
+                *[process_briefing(task) for task in briefing_tasks],
+                return_exceptions=True
+            )
+
+            # Collect failures and check if any are 429-related
+            retry_tasks = []
+            for task, result in zip(briefing_tasks, phase1_results):
+                if isinstance(result, Exception):
+                    err_str = str(result)
+                    is_rate_limit = "429" in err_str or "too_many_requests" in err_str.lower()
+                    if is_rate_limit:
+                        logger.warning(f"[briefing] Phase1 429 for {task['category']}, queued for serial retry")
+                        retry_tasks.append(task)
+                    else:
+                        raise result  # Non-429 error: propagate immediately
+
+            # Phase 2: retry failed tasks serially (semaphore=1)
+            if retry_tasks:
+                logger.info(f"[briefing] Degrading to serial retry for {len(retry_tasks)} task(s)")
+                serial_semaphore = asyncio.Semaphore(1)
+
+                async def retry_briefing(task: Dict[str, Any]) -> Dict[str, Any]:
+                    async with serial_semaphore:
+                        await asyncio.sleep(random.uniform(2, 5))  # Cool-down before retry
+                        result = {'content': ''}
+                        async for event in self.generate_category_briefing(
+                            task['curated_data'],
+                            task['category'],
+                            context
+                        ):
+                            if isinstance(event, dict) and 'content' in event:
+                                result = event
+
+                        if result['content']:
+                            briefings[task['category']] = result['content']
+                            state[task['briefing_key']] = result['content']
+                            logger.info(f"[retry] Completed {task['data_field']} briefing ({len(result['content'])} characters)")
+                        else:
+                            raise RuntimeError(f"Empty briefing on retry for {task['data_field']}")
+
+                        return {'category': task['category'], 'success': True, 'length': len(result['content'])}
+
+                retry_results = await asyncio.gather(
+                    *[retry_briefing(task) for task in retry_tasks],
+                    return_exceptions=True
+                )
+                for result in retry_results:
+                    if isinstance(result, Exception):
+                        raise result  # Retry also failed: give up
+
+            results = [r for r in phase1_results if not isinstance(r, Exception)]
+
             # Log completion statistics
-            successful_briefings = sum(1 for r in results if r['success'])
+            successful_briefings = len(results) + len(retry_tasks)
             total_length = sum(r['length'] for r in results)
             logger.info(f"Generated {successful_briefings}/{len(briefing_tasks)} briefings with total length {total_length}")
 

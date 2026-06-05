@@ -436,7 +436,9 @@ async def scrape_static(url: str) -> ScrapeResult:
         return ScrapeResult(url=url, title=title, text=text, method="static",
                             failure_reason="Content too short after purification")
 
-    return ScrapeResult(url=url, title=title, text=text, method="static", success=True)
+    result = ScrapeResult(url=url, title=title, text=text, method="static", success=True)
+    result._soup = soup  # Cache parsed soup for link discovery
+    return result
 
 
 async def scrape_json_ld(url: str) -> ScrapeResult:
@@ -471,7 +473,9 @@ async def scrape_enhanced(url: str) -> ScrapeResult:
         return ScrapeResult(url=url, title=title, text=text, method="enhanced-static",
                             failure_reason="Content too short after purification")
 
-    return ScrapeResult(url=url, title=title, text=text, method="enhanced-static", success=True)
+    result = ScrapeResult(url=url, title=title, text=text, method="enhanced-static", success=True)
+    result._soup = soup  # Cache parsed soup for link discovery
+    return result
 
 
 async def scrape_single_url(url: str) -> ScrapeResult:
@@ -505,6 +509,29 @@ async def scrape_single_url(url: str) -> ScrapeResult:
     )
 
 
+# ---------------------------------------------------------------------------
+# Product-page heuristic: determines if a site is product/catalog-oriented
+# ---------------------------------------------------------------------------
+_PRODUCT_PATH_SIGNALS = frozenset([
+    "product", "products", "shop", "store", "catalog", "catalogue",
+    "category", "categories", "collection", "collections", "item", "items",
+    "buy", "cart", "sku", "listing", "listings", "portfolio",
+])
+
+
+def _estimate_product_site(links: List[str]) -> bool:
+    """Heuristic: if ≥20% of discovered links contain product-like path segments, it's a product site."""
+    if not links:
+        return False
+    product_count = 0
+    for link in links:
+        path_lower = urlparse(link).path.lower()
+        if any(seg in path_lower for seg in _PRODUCT_PATH_SIGNALS):
+            product_count += 1
+    ratio = product_count / len(links)
+    return ratio >= 0.2
+
+
 async def crawl_site(
     url: str,
     max_pages: int = 50,
@@ -515,6 +542,10 @@ async def crawl_site(
     """
     Crawl a website starting from the given URL.
     Returns a dict of {url: {raw_content, source, method}}.
+
+    Optimizations:
+      - Reuses seed page HTML for link discovery (no duplicate fetch).
+      - Detects if site is product/catalog-oriented; if not, limits crawl to fewer pages.
 
     Tries custom scraping first. Returns whatever was successfully scraped.
     The caller (grounding.py) should fall back to Tavily for failures.
@@ -535,11 +566,15 @@ async def crawl_site(
             "method": seed_result.method,
         }
 
-        # Discover links from seed page using already-fetched content
+        # Discover links from seed page — reuse cached soup (no duplicate fetch)
         if max_depth > 0:
-            resp = await _fetch_page(url)
-            if resp:
-                soup = BeautifulSoup(resp.text, "html.parser")
+            soup = getattr(seed_result, '_soup', None)
+            if not soup:
+                # Fallback: fetch once if soup wasn't cached (e.g. json-ld strategy)
+                resp = await _fetch_page(url)
+                soup = BeautifulSoup(resp.text, "html.parser") if resp else None
+
+            if soup:
                 discovered = _discover_links(
                     soup,
                     url,
@@ -547,6 +582,15 @@ async def crawl_site(
                     focus_keywords=focus_keywords,
                     strict_focus=strict_focus,
                 )
+
+                # Heuristic: if site is NOT product-oriented, limit crawl depth
+                if not strict_focus and not _estimate_product_site(discovered):
+                    effective_max = min(max_pages, 15)
+                    logger.info(
+                        f"Non-product site detected, limiting crawl from {max_pages} to {effective_max} pages"
+                    )
+                    discovered = discovered[:effective_max]
+
                 to_visit.extend(discovered)
 
     # Crawl discovered pages concurrently

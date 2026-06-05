@@ -198,6 +198,22 @@ function App() {
     const lastKnownStep = latestStatusRef.current?.step || 'Unknown stage';
     const lastKnownMessage = latestStatusRef.current?.message || 'No additional backend status available';
 
+    // If all fetches failed with network errors (fetch itself threw), retry SSE reconnect
+    if (lastPayload === null && lastFetchError !== null) {
+      if (streamRecoveryAttemptsRef.current < MAX_STREAM_RECOVERY_RETRIES) {
+        streamRecoveryAttemptsRef.current += 1;
+        setStatus({
+          step: lastKnownStep,
+          message: `网络波动，正在重连（${streamRecoveryAttemptsRef.current}/${MAX_STREAM_RECOVERY_RETRIES}）...`
+        });
+        setError(null);
+        setTimeout(() => {
+          streamResults(jobId);
+        }, 1500 * streamRecoveryAttemptsRef.current);  // 增量等待
+        return;
+      }
+    }
+
     if (lastPayload?.status === 'processing' || lastPayload?.status === 'pending') {
       if (streamRecoveryAttemptsRef.current < MAX_STREAM_RECOVERY_RETRIES) {
         streamRecoveryAttemptsRef.current += 1;

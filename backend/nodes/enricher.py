@@ -90,16 +90,18 @@ class Enricher:
                 except Exception:
                     pass
 
-        # Try custom scraper first
+        # Try custom scraper first (12s timeout per URL)
         try:
             _emit_llm_status(f"🤖 LLM状态: 自研爬取未调用LLM ({url[:70]})")
-            content = await extract_url_content(url)
+            content = await asyncio.wait_for(extract_url_content(url), timeout=12)
             if content and len(content) > 50:
                 logger.debug(f"Custom scraper success for {url}")
                 _emit("custom", f"自研爬取成功: {url[:70]}")
                 if circuit_breaker:
                     circuit_breaker.record_success(url)
                 return (url, content, 'custom')
+        except asyncio.TimeoutError:
+            logger.debug(f"Custom scraper timed out (12s) for {url}")
         except Exception as e:
             logger.debug(f"Custom scraper failed for {url}: {e}")
 

@@ -52,6 +52,16 @@ from langchain_openai import AzureChatOpenAI
 from langchain_core.prompts import ChatPromptTemplate
 from tavily import AsyncTavilyClient
 
+# 全局Tavily搜索限流器 - 防止5个researcher同时发40+请求导致429
+_tavily_search_semaphore: asyncio.Semaphore | None = None
+
+def _get_tavily_semaphore() -> asyncio.Semaphore:
+    """懒初始化Tavily限流信号量（必须在事件循环内调用）"""
+    global _tavily_search_semaphore
+    if _tavily_search_semaphore is None:
+        _tavily_search_semaphore = asyncio.Semaphore(10)
+    return _tavily_search_semaphore
+
 from ...classes import ResearchState
 from ...classes.state import job_status
 from ...utils.references import clean_title
@@ -338,7 +348,7 @@ class BaseResearcher:
             "total_queries": len(queries)
         }
 
-        # Execute all searches in parallel
+        # Execute all searches with rate limiting (global Semaphore(10))
         search_params = self._get_search_params()
         job_id = state.get('job_id')
         if job_id and job_id in job_status:
@@ -347,7 +357,14 @@ class BaseResearcher:
                 "count": len(queries),
                 "message": f"📡 Tavily搜索: {len(queries)} 条查询"
             })
-        search_tasks = [self.tavily_client.search(query, **search_params) for query in queries]
+
+        sem = _get_tavily_semaphore()
+
+        async def _rate_limited_search(query: str):
+            async with sem:
+                return await self.tavily_client.search(query, **search_params)
+
+        search_tasks = [_rate_limited_search(query) for query in queries]
 
         try:
             results = await asyncio.gather(*search_tasks, return_exceptions=True)
