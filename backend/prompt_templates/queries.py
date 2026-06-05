@@ -3,14 +3,15 @@ Search query generation prompts for all four researcher nodes.
 These prompts generate targeted search queries for Tavily.
 """
 
+from .seller_profile import SELLER_CONTEXT_EN, SELLER_NAME_EN, SELLER_PRODUCTS_SHORT_EN
+
 # ============================================================
 # RESEARCHER SYSTEM MESSAGE - shared by all four analyzers
 # ============================================================
 RESEARCHER_SYSTEM_MESSAGE = """You are researching {company}, a company in the {industry} industry, headquartered in {hq_location}.
+Company website: {company_url}
 
-【Seller Context】You are conducting this research on behalf of LoctekMotion (乐歌股份, www.loctekmotion.com), a Chinese ergonomic lifting product manufacturer.
-LoctekMotion's product categories: Standing Desk, TV Mount, Electric Sofa, Electric Bed, Chair, Monitor Stand, Lifting Platform, Fitness Equipment, Meeting Pod.
-Your research goal: Identify whether {company}'s audience has a real need for any of these products, find sales channels, discover pain points, and uncover promotion opportunities for LoctekMotion to sell TO or THROUGH {company}."""
+""" + SELLER_CONTEXT_EN
 
 QUERY_FORMAT_GUIDELINES = """
 Format your response as a JSON object with the following structure:
@@ -28,10 +29,10 @@ Hard requirements for generated queries:
 2) Include at least 3 queries explicitly containing product/category terms such as product, products, category, categories, solutions, catalog, collections.
 """
 
-COMPANY_ANALYZER_QUERY_PROMPT = """You are a B2B sales research expert for LoctekMotion (乐歌股份), a Chinese ergonomic lifting product manufacturer.
-LoctekMotion sells: Standing Desks, TV Mounts, Electric Sofas, Electric Beds, Chairs, Monitor Stands, Lifting Platforms, Fitness Equipment, Meeting Pods.
+COMPANY_ANALYZER_QUERY_PROMPT = f"""You are a B2B sales research expert for {SELLER_NAME_EN}.
+{SELLER_NAME_EN} sells: {SELLER_PRODUCTS_SHORT_EN}.
 
-Your task: Generate 8 targeted search queries to research {company} ({industry}, {hq_location}).
+Your task: Generate 8 targeted search queries to research {{company}} ({{industry}}, {{hq_location}}).
 
 Focus areas for queries:
 1. Core products/services offered by the company
@@ -44,19 +45,19 @@ Focus areas for queries:
 8. Procurement/sourcing from China (中国采购记录, Chinese suppliers, import records)
 
 Examples of good queries:
-- "{company} manufacturer or reseller own factory production"
-- "{company} product sourcing China suppliers import"
-- "{company} OEM ODM manufacturing capability"
-- "{company} China procurement import records trade data"
-- "{company} products pricing official website"
-- "site:{company} product categories"
-- "site:{company} solutions catalog collections"
+- "{{company}} manufacturer or reseller own factory production"
+- "{{company}} product sourcing China suppliers import"
+- "{{company}} OEM ODM manufacturing capability"
+- "{{company}} China procurement import records trade data"
+- "{{company}} products pricing official website"
+- "site:{{company}} product categories"
+- "site:{{company}} solutions catalog collections"
 
 """ + QUERY_FORMAT_GUIDELINES
 
 
-FINANCIAL_ANALYZER_QUERY_PROMPT = """You are a B2B sales research expert for LoctekMotion (乐歌股份).
-Your task: Generate 8 targeted search queries to research the financial situation and supply chain of {company} ({industry}, {hq_location}).
+FINANCIAL_ANALYZER_QUERY_PROMPT = f"""You are a B2B sales research expert for {SELLER_NAME_EN}.
+Your task: Generate 8 targeted search queries to research the financial situation and supply chain of {{company}} ({{industry}}, {{hq_location}}).
 
 Focus areas for queries:
 1. Funding rounds and investors
@@ -69,18 +70,18 @@ Focus areas for queries:
 8. Marketing/promotion budget or spend signals
 
 Examples of good queries:
-- "{company} funding rounds investors valuation"
-- "{company} revenue annual report financial"
-- "{company} China import customs records sourcing"
-- "{company} supplier manufacturer China trade data"
-- "{company} Canton Fair Global Sources Alibaba sourcing"
-- "site:{company} procurement suppliers product lines"
+- "{{company}} funding rounds investors valuation"
+- "{{company}} revenue annual report financial"
+- "{{company}} China import customs records sourcing"
+- "{{company}} supplier manufacturer China trade data"
+- "{{company}} Canton Fair Global Sources Alibaba sourcing"
+- "site:{{company}} procurement suppliers product lines"
 
 """ + QUERY_FORMAT_GUIDELINES
 
 
-INDUSTRY_ANALYZER_QUERY_PROMPT = """You are a B2B sales research expert for LoctekMotion (乐歌股份).
-Your task: Generate 8 targeted search queries to research the industry landscape for {company} ({industry}, {hq_location}).
+INDUSTRY_ANALYZER_QUERY_PROMPT = f"""You are a B2B sales research expert for {SELLER_NAME_EN}.
+Your task: Generate 8 targeted search queries to research the industry landscape for {{company}} ({{industry}}, {{hq_location}}).
 
 Focus areas for queries:
 1. Market size and growth trends in this industry
@@ -96,8 +97,8 @@ Focus areas for queries:
 """ + QUERY_FORMAT_GUIDELINES
 
 
-NEWS_SCANNER_QUERY_PROMPT = """You are a B2B sales research expert for LoctekMotion (乐歌股份).
-Your task: Generate 8 targeted search queries to find the latest news and events about {company} ({industry}, {hq_location}).
+NEWS_SCANNER_QUERY_PROMPT = f"""You are a B2B sales research expert for {SELLER_NAME_EN}.
+Your task: Generate 8 targeted search queries to find the latest news and events about {{company}} ({{industry}}, {{hq_location}}).
 
 Focus areas for queries:
 1. Recent product launches or updates (last 12 months)
@@ -107,13 +108,16 @@ Focus areas for queries:
 5. Awards, media coverage, or recognition
 6. Expansion plans or new market entries
 7. Leadership changes or company announcements
-8. Social media buzz or trending content related to {company}
+8. Social media buzz or trending content related to {{company}}
 
 """ + QUERY_FORMAT_GUIDELINES
 
 
-SOCIAL_MEDIA_ANALYZER_QUERY_PROMPT = """You are a B2B sales research expert for LoctekMotion (乐歌股份).
-Your task: Generate 8 targeted search queries to find social media content and digital presence for {company} ({industry}, {hq_location}).
+SOCIAL_MEDIA_ANALYZER_QUERY_PROMPT = f"""You are a B2B sales research expert for {SELLER_NAME_EN}.
+Your task: Generate 8 targeted search queries to find social media content and digital presence for {{company}} ({{industry}}, {{hq_location}}).
+Company website: {{company_url}}
+
+IMPORTANT: Use the company's domain name (e.g. "bol.com") or full company name in your queries to avoid matching unrelated accounts with similar short names. For example, search for "bol.com" instead of just "Bol" to find the actual company's social media presence.
 
 Focus areas for queries:
 1. Social media official accounts (LinkedIn, Twitter/X, Instagram, Facebook, TikTok, WeChat, Douyin)
@@ -123,17 +127,17 @@ Focus areas for queries:
 5. Social media follower count, engagement rate, content strategy
 6. User reviews on social platforms or review sites
 7. Community discussions or forum mentions
-8. Viral content or trending topics related to {company}
+8. Viral content or trending topics related to {{company}}
 
 Examples of good queries:
-- "{company} LinkedIn company page followers engagement"
-- "{company} Twitter X official account posts updates"
-- "{company} Instagram Facebook official accounts social media"
-- "{company} TikTok Douyin 抖音 official account"
-- "{company} social media strategy content marketing"
-- "{company} customer reviews Trustpilot Google reviews social"
-- "site:linkedin.com {company} company profile"
-- "site:twitter.com {company} official account"
+- "site:linkedin.com/company {{company}}"
+- "{{company_url}} LinkedIn official page followers"
+- "{{company_url}} Twitter X official account"
+- "{{company_url}} Instagram Facebook social media presence"
+- "{{company}} official TikTok account {{hq_location}}"
+- "{{company_url}} social media marketing strategy"
+- "{{company}} customer reviews social media {{industry}}"
+- "{{company_url}} brand social media engagement"
 
 """ + QUERY_FORMAT_GUIDELINES
 

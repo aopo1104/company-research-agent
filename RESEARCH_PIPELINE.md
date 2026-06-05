@@ -1,4 +1,4 @@
-﻿# 公司研究智能体 - 完整工作流详解 (v2.2 - 2026年6月)
+﻿# 公司研究智能体 - 完整工作流详解 (v2.3 - 2026年6月)
 
 本文档基于实际代码精确整理，每个细节均对应具体文件和实现。
 
@@ -17,6 +17,16 @@
       │  / 行业 / 总部位置             │
       └────────────┬───────────────────┘
                    │ company / industry / hq_location
+                   ▼
+      ┌────────────────────────────────┐
+      │  POST /research                │  application.py
+      │  生成 job_id (UUID)            │
+      │  asyncio.create_task 启动后台  │
+      │  立即返回 job_id 给前端        │
+      │  前端连接 SSE: /research/      │
+      │    {job_id}/stream             │
+      └────────────┬───────────────────┘
+                   │
                    ▼
       ┌────────────────────────────────┐
       │  【阶段1】Grounding            │  grounding.py
@@ -243,12 +253,25 @@
 | 层次 | 技术 | 用途 |
 |------|------|------|
 | 工作流引擎 | LangGraph StateGraph | 节点编排、并行调度 |
-| LLM | Azure OpenAI GPT-4o | 查询生成、简报、报告 |
+| LLM | Azure OpenAI GPT-4o | 查询生成、简报、报告、开发信、翻译 |
 | 搜索 | Tavily API | 网络搜索、内容提取 |
 | 爬虫 | httpx + BeautifulSoup4 | 官网抓取、内容充实 |
 | API框架 | FastAPI + Uvicorn | HTTP服务、SSE流式 |
 | 前端 | React 18 + Vite + TypeScript | UI界面 |
 | 进程管理 | PM2 | 前后端统一管理 |
+| 数据库(可选) | MongoDB (pymongo) | 任务持久化存储 |
+| PDF生成 | ReportLab | Markdown → PDF |
+
+---
+
+## 委托方配置
+
+本系统为 **LoctekMotion（乐歌股份）** 定制：
+
+- 公司信息权威来源：`backend/prompt_templates/COMPANY.md`
+- 代码变量定义：`backend/prompt_templates/seller_profile.py`
+- 所有 Prompt 文件通过导入 `seller_profile.py` 获取公司上下文
+- 切换委托方时只需修改 `seller_profile.py` 和 `COMPANY.md`
 
 ---
 
@@ -320,30 +343,52 @@ messages: list             # LangChain消息历史
 
 | 端点 | 方法 | 功能 |
 |------|------|------|
-| `/research` | POST | 启动研究任务，返回job_id |
-| `/research/{job_id}` | GET | SSE流式读取进度和结果 |
-| `/extract-company-info` | POST | 从URL提取公司信息 |
-| `/generate-email` | POST | 基于报告生成开发信 |
-| `/download/{job_id}` | GET | 下载PDF报告 |
+| `/` | GET | 健康检查 (返回 `{"message": "Alive"}`) |
+| `/research` | POST | 启动完整研究任务，返回 job_id |
+| `/research/{job_id}/stream` | GET | SSE 流式读取进度和最终结果 |
+| `/research/{job_id}/report` | GET | 轮询获取报告（兼容非SSE场景）|
+| `/research/{job_id}` | GET | 获取任务详情（需 MongoDB）|
+| `/research/pdf/{filename}` | GET | 下载已生成的 PDF 文件 |
+| `/research-quick` | POST | 快速研究：单轮 Tavily 搜索 + 单次 LLM 生成报告 |
+| `/extract-company-info` | POST | 从 URL 提取公司名/行业/位置 |
+| `/generate-email` | POST | 基于报告生成 B2B 开发信（JSON 格式）|
+| `/generate-pdf` | POST | 从 Markdown 内容生成 PDF 流式下载 |
+| `/translate` | POST | 将报告翻译为指定语言（默认中文）|
+
+---
+
+## 快速研究模式 (`/research-quick`)
+
+```
+POST /research-quick
+Body: { company, company_url?, industry?, hq_location? }
+```
+
+轻量级研究路径，不走 LangGraph 管线：
+
+1. 构造 3-4 条搜索查询（公司概况 + 新闻 + 采购 + 官网site:）
+2. Tavily 并行搜索，每条取 5 结果，共 ~15 条
+3. 单次 Azure GPT-4o 调用，使用 `QUICK_RESEARCH_SYSTEM_PROMPT`
+4. 直接返回 Markdown 报告（无流式、无 job_id）
+
+适用场景：快速了解公司概况，无需深度研究时使用。
 
 ---
 
 ## SSE 事件类型
 
-前端通过 EventSource 订阅以下事件:
+前端通过 EventSource 订阅 `/research/{job_id}/stream`:
 
-| type | 含义 |
-|------|------|
-| `stage_update` | 当前阶段名称更新 |
-| `progress_update` | 进度百分比 |
-| `crawl_start` / `crawl_success` / `crawl_failed` | 官网抓取状态 |
-| `scrape_source` | Enricher爬取单个URL的状态 |
-| `llm_call` / `llm_status` | LLM调用状态 |
-| `tavily_search` | Tavily搜索事件 |
-| `curation_details` | Curator筛选详情 |
-| `stage_warning` | 阶段警告 |
-| `research_results` | 最终结果（报告内容流） |
-| `error` | 错误信息 |
+| type 字段 | 含义 | 触发时机 |
+|-----------|------|----------|
+| `progress` | 当前执行节点名 | 每个 LangGraph 节点完成时 |
+| `research_init` | 研究启动确认 | 任务创建时 |
+| `complete` | 最终报告(Markdown) | 研究全部完成 |
+| `error` | 错误信息 + 失败阶段 | 任何异常 |
+| `: keepalive` | SSE 注释心跳 | 每 ~15秒无数据时 |
+
+> 各节点内部可向 `job_status[job_id]["events"]` 队列追加自定义事件，
+> SSE 循环会 FIFO 弹出并推送给前端。
 
 ---
 
@@ -355,7 +400,8 @@ messages: list             # LangChain消息历史
 | v2.0 | 2026-05 | 新增SocialMediaAnalyzer第5节点 |
 | v2.1 | 2026-06 | 社媒宽松筛选、活动日志移除 |
 | v2.2 | 2026-06 | 文档按代码精确重写 |
+| v2.3 | 2026-06 | 新增快速研究/翻译端点、委托方配置、COMPANY.md整理 |
 
 ---
 
-**更新时间**: 2026年6月4日
+**更新时间**: 2026年6月5日

@@ -156,6 +156,7 @@ class BaseResearcher:
         company = state.get("company", "Unknown Company")
         industry = state.get("industry", "Unknown Industry")
         hq_location = state.get("hq_location", "Unknown")
+        company_url = state.get("company_url", "")
         current_year = datetime.now().year
         job_id = state.get("job_id")
         
@@ -169,7 +170,7 @@ class BaseResearcher:
             # Create prompt template using LangChain
             query_prompt = ChatPromptTemplate.from_messages([
                 ("system", RESEARCHER_SYSTEM_MESSAGE),
-                ("user", """Researching {company} in {year}, as of {date}.
+                ("user", """Researching {company} (website: {company_url}) in {year}, as of {date}.
 {task_prompt}
 {format_guidelines}""")
             ])
@@ -192,6 +193,7 @@ class BaseResearcher:
                 "company": company,
                 "industry": industry,
                 "hq_location": hq_location,
+                "company_url": company_url,
                 "year": current_year,
                 "date": datetime.now().strftime("%B %d, %Y"),
                 "task_prompt": prompt,

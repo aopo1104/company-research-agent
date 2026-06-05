@@ -24,6 +24,7 @@ grounding.py - 官网抓取阶段 (Stage 1)
   4. 发送crawl_success/crawl_failed事件
 """
 
+import asyncio
 import logging
 import os
 from typing import List
@@ -126,17 +127,17 @@ class GroundingNode:
                     "message": "🤖 LLM状态: 官网自研爬取阶段未调用LLM"
                 })
 
-                # 1) 保留现有全量抓取（广覆盖）
-                broad_scrape = await crawl_site(url, max_pages=50, max_depth=1)
-
-                # 2) 新增专项抓取（聚焦产品/品类相关URL），并与广覆盖结果合并
+                # 1) 广覆盖 + 2) 专项抓取 并行执行
                 focus_keywords = self._get_focus_keywords()
-                focused_scrape = await crawl_site(
-                    url,
-                    max_pages=30,
-                    max_depth=1,
-                    focus_keywords=focus_keywords,
-                    strict_focus=True,
+                broad_scrape, focused_scrape = await asyncio.gather(
+                    crawl_site(url, max_pages=50, max_depth=1),
+                    crawl_site(
+                        url,
+                        max_pages=30,
+                        max_depth=1,
+                        focus_keywords=focus_keywords,
+                        strict_focus=True,
+                    ),
                 )
 
                 site_scrape = dict(broad_scrape)

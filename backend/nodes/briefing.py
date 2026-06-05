@@ -161,6 +161,7 @@ class Briefing:
         company = context.get('company', 'Unknown')
         industry = context.get('industry', 'Unknown')
         hq_location = context.get('hq_location', 'Unknown')
+        company_url = context.get('company_url', '')
         job_id = context.get('job_id')
         
         logger.info(f"Generating {category} briefing for {company} using {len(docs)} documents")
@@ -184,7 +185,7 @@ class Briefing:
 
         # Get category-specific prompt and prepare documents
         category_prompt = self._get_category_prompt(category).format(
-            company=company, industry=industry, hq_location=hq_location
+            company=company, industry=industry, hq_location=hq_location, company_url=company_url
         )
         formatted_docs = self._prepare_documents(docs)
         
@@ -297,7 +298,7 @@ class Briefing:
 
         # Process briefings in parallel with rate limiting
         if briefing_tasks:
-            briefing_semaphore = asyncio.Semaphore(3)  # Limit to 3 concurrent briefings
+            briefing_semaphore = asyncio.Semaphore(5)  # All 5 briefings in parallel
             
             async def process_briefing(task: Dict[str, Any]) -> Dict[str, Any]:
                 """Process a single briefing with rate limiting."""

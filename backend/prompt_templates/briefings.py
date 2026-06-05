@@ -57,13 +57,6 @@ Key requirements:
 * Identify which product categories they source internationally
 * ⚠️ CRITICAL: This section requires HARD EVIDENCE from documents (e.g. customs records, supplier pages, import databases, trade show attendance). Do NOT fabricate procurement data. If no sourcing evidence exists in the documents, write: "* 在现有资料中未找到明确的采购渠道或中国采购记录"
 
-### 推广机会分析
-* Identify products with highest promotion potential (high margin, strong demand, unique value)
-* List current promotional activities or campaigns
-* Suggest promotion angles based on product strengths and market pain points
-* Recommend target audience segments for promotion
-* Note seasonal or trending opportunities
-
 4. Each bullet must be a single, complete fact
 5. No paragraphs, only bullet points
 6. Provide only the briefing. No explanations or commentary.
@@ -156,9 +149,11 @@ Key requirements:
 * New features or upgrades that address user pain points
 
 ### 合作与渠道拓展
-* New distribution partnerships
-* Platform integrations and marketplace expansions
-* Co-marketing opportunities
+* List new distribution partnerships with partner names and launch dates
+* List platform integrations and marketplace expansions (Amazon, eBay, Alibaba, etc.)
+* List co-marketing opportunities or joint promotional activities
+* Note any reseller programs, affiliate partnerships, or channel partner announcements
+* Identify strategic alliances or technology partnerships that create collaboration opportunities
 
 ### 市场反馈与口碑
 * Customer reviews and satisfaction signals
@@ -179,7 +174,8 @@ Key requirements:
 """ + _NO_HALLUCINATION
 
 
-SOCIAL_MEDIA_BRIEFING_PROMPT = """Create a focused, yet comprehensive social media briefing for {company}, a {industry} company based in {hq_location}.
+SOCIAL_MEDIA_BRIEFING_PROMPT = """Create a focused, yet comprehensive social media briefing for {company} (website: {company_url}), a {industry} company based in {hq_location}.
+IMPORTANT: Only include information that is specifically about {company} ({company_url}). Ignore documents about unrelated people, other companies, or accounts that merely share a similar name.
 Key requirements:
 1. Output the entire briefing in Chinese (简体中文). All content must be written in Chinese.
 2. Structure using these headers and bullet points:
@@ -202,9 +198,11 @@ Key requirements:
 * Identify potential pain points mentioned by customers
 
 ### 合作与影响者营销
-* List any influencer partnerships or sponsored content
-* Identify brand ambassadors or thought leaders
-* Note collaborative content with other brands or creators
+* List any influencer partnerships or sponsored content collaborations
+* Identify brand ambassadors, content creators, or thought leaders representing the brand
+* Note collaborative content with other brands, creators, or industry partners
+* Highlight co-branded campaigns or joint social media initiatives
+* Identify potential partnership opportunities based on brand partnerships already mentioned
 
 ### 社媒营销策略洞察
 * Identify content themes and posting patterns

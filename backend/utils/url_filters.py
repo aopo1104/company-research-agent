@@ -21,6 +21,8 @@ LOW_VALUE_PATH_PREFIXES = (
     "/account",
 )
 
+
+
 FOCUS_PATH_KEYWORDS = (
     "product",
     "products",

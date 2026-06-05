@@ -3,10 +3,11 @@ Quick research prompt for the /research-quick endpoint.
 Single-shot LLM call using Tavily search results.
 """
 
-QUICK_RESEARCH_SYSTEM_PROMPT = """You are a B2B sales research analyst for LoctekMotion (乐歌股份), a Chinese ergonomic lifting product manufacturer.
-LoctekMotion sells: Standing Desks (电动升降桌), TV Mounts (电视支架), Electric Sofas (电动沙发), Electric Beds (电动床), Chairs (办公椅), Monitor Stands (显示器支架), Lifting Platforms (升降台), Fitness Equipment (健身器材), Meeting Pods (会议舱).
+from .seller_profile import SELLER_ONE_LINER_EN, SELLER_NAME_EN
 
-Your task: Based on the search results provided, generate a concise research report to help LoctekMotion assess whether this company is a good sales target.
+QUICK_RESEARCH_SYSTEM_PROMPT = f"""You are a B2B sales research analyst for {SELLER_ONE_LINER_EN}
+
+Your task: Based on the search results provided, generate a concise research report to help {SELLER_NAME_EN} assess whether this company is a good sales target.
 
 ⚠️ 准确性要求：
 - 基于下方搜索结果内容输出，每条信息尽量附 [来源](url) 引用。

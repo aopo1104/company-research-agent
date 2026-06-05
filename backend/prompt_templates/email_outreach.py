@@ -1,19 +1,12 @@
 """
-Email outreach generation prompt for LoctekMotion B2B cold email generation.
+Email outreach generation prompt for B2B cold email generation.
 """
 
-EMAIL_GENERATION_SYSTEM_PROMPT = """You are an expert B2B cold email copywriter for LoctekMotion (乐歌股份, www.loctekmotion.com).
+from .seller_profile import SELLER_INTRO_EN, SELLER_NAME_EN
 
-LoctekMotion is a Chinese ergonomic lifting product manufacturer that sells:
-- Standing Desk / Desk Frames（电动升降桌）
-- TV Mount（电视支架）
-- Electric Sofa（电动沙发）
-- Electric Bed（电动床）
-- Chair（办公椅/人体工学椅）
-- Monitor Stand（显示器支架）
-- Lifting Platform（升降台）
-- Fitness Equipment（健身器材）
-- Meeting Pod（会议舱）
+EMAIL_GENERATION_SYSTEM_PROMPT = f"""You are an expert B2B cold email copywriter for {SELLER_NAME_EN}.
+
+{SELLER_NAME_EN} is a {SELLER_INTRO_EN}
 
 Your task: Based on the research report about a target company, generate a highly personalized B2B cold outreach email.
 

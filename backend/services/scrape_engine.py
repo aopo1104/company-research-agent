@@ -48,6 +48,101 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Domain Circuit Breaker - 自适应域名熔断器
+# ---------------------------------------------------------------------------
+class DomainCircuitBreaker:
+    """自适应域名熔断器：运行时统计每个域名+路径前缀的成功/失败，连续失败超阈值后自动跳过。
+    
+    无需硬编码任何域名。无论目标是哪个网站，只要连续失败就会触发熔断。
+    每次 research 任务创建一个新实例，任务结束后丢弃。
+    
+    熔断粒度: 域名 + 第一段路径 (例如 finance.yahoo.com/quote 和 finance.yahoo.com/news 独立计数)
+    这样某个路径模式的失败不会牵连同域名下其他有用路径。
+    
+    参数:
+        failure_threshold: 连续失败多少次后熔断该路径组 (默认3)
+    """
+
+    def __init__(self, failure_threshold: int = 3):
+        self.failure_threshold = failure_threshold
+        # key -> {failures, successes, consecutive_failures}
+        self._stats: Dict[str, Dict[str, int]] = {}
+
+    def should_skip(self, url: str) -> bool:
+        """检查该URL的域名+路径组是否已被熔断。"""
+        key = self._get_key(url)
+        stats = self._stats.get(key)
+        if not stats:
+            return False
+        return stats['consecutive_failures'] >= self.failure_threshold
+
+    def record_success(self, url: str):
+        """记录一次成功抓取。"""
+        key = self._get_key(url)
+        stats = self._ensure_stats(key)
+        stats['successes'] += 1
+        stats['consecutive_failures'] = 0
+
+    def record_failure(self, url: str):
+        """记录一次失败抓取。"""
+        key = self._get_key(url)
+        stats = self._ensure_stats(key)
+        stats['failures'] += 1
+        stats['consecutive_failures'] += 1
+
+    def get_summary(self) -> Dict[str, Dict[str, int]]:
+        """获取所有被熔断的路径组摘要（用于日志）。"""
+        return {
+            key: dict(s) for key, s in self._stats.items()
+            if s['consecutive_failures'] >= self.failure_threshold
+        }
+
+    def _ensure_stats(self, key: str) -> Dict[str, int]:
+        if key not in self._stats:
+            self._stats[key] = {
+                'failures': 0,
+                'successes': 0,
+                'consecutive_failures': 0,
+            }
+        return self._stats[key]
+
+    # Locale-like short path segments (2-3 chars) that should be skipped for key granularity
+    _LOCALE_SEGMENTS = frozenset([
+        'nl', 'be', 'en', 'fr', 'de', 'es', 'it', 'pt', 'ja', 'ko', 'zh',
+        'eu', 'us', 'uk', 'au', 'nz', 'sg', 'hk', 'ca', 'in',
+    ])
+
+    def _get_key(self, url: str) -> str:
+        """获取熔断 key: 域名 + 有意义的路径前缀。
+        
+        跳过 locale 段 (nl, be, en, fr...) 取真正区分内容类型的路径段。
+        
+        例如:
+          https://finance.yahoo.com/quote/BOL.BK → finance.yahoo.com/quote
+          https://www.bol.com/nl/nl/p/product → www.bol.com/p
+          https://www.bol.com/be/nl/l/bureaus/14247 → www.bol.com/l
+          https://www.bol.com/nl/nl/klantenservice → www.bol.com/klantenservice
+          https://x.com/JohnBol_7 → x.com/JohnBol_7
+          https://over.bol.com/en/news/something → over.bol.com/news
+        """
+        try:
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+            # 取路径段，跳过 locale 前缀
+            path_parts = [p for p in parsed.path.split('/') if p]
+            # Skip locale-like segments (short 2-3 char codes)
+            meaningful = [p for p in path_parts if p.lower() not in self._LOCALE_SEGMENTS]
+            if meaningful:
+                return f"{domain}/{meaningful[0]}"
+            elif path_parts:
+                # All segments are locale-like, use last one
+                return f"{domain}/{path_parts[-1]}"
+            return domain
+        except Exception:
+            return url
+
 # 浏览器User-Agent - 避免被识别为爬虫
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -306,14 +401,16 @@ async def _fetch_page(url: str, enhanced: bool = False) -> Optional[httpx.Respon
     try:
         async with httpx.AsyncClient(
             follow_redirects=True,
-            timeout=20.0,
+            timeout=10.0,
             verify=False,
         ) as client:
             resp = await client.get(url, headers=headers)
             if resp.status_code == 200 and len(resp.text) > 500:
                 return resp
             logger.debug(f"Fetch returned status {resp.status_code} for {url}")
-            return None
+            # Store status code for caller to check rejection
+            resp._scrape_status = resp.status_code
+            return resp if resp.status_code in (403, 401) else None
     except Exception as e:
         logger.debug(f"Fetch failed for {url}: {e}")
         return None
@@ -324,6 +421,12 @@ async def scrape_static(url: str) -> ScrapeResult:
     resp = await _fetch_page(url, enhanced=False)
     if not resp:
         return ScrapeResult(url=url, method="static", failure_reason="HTTP fetch failed")
+
+    # Check for server rejection
+    status = getattr(resp, '_scrape_status', resp.status_code)
+    if status in (403, 401):
+        return ScrapeResult(url=url, method="static",
+                            failure_reason=f"HTTP {status} Forbidden")
 
     soup = BeautifulSoup(resp.text, "html.parser")
     title = _extract_title(soup)
@@ -372,22 +475,28 @@ async def scrape_enhanced(url: str) -> ScrapeResult:
 
 
 async def scrape_single_url(url: str) -> ScrapeResult:
-    """Try all strategies in order for a single URL, return first success."""
-    strategies = [
-        ("static", scrape_static),
-        ("json-ld", scrape_json_ld),
-        ("enhanced-static", scrape_enhanced),
-    ]
+    """Try strategies in order for a single URL, return first success.
+    If static gets a clear rejection (403/401), skip enhanced to avoid wasting time."""
+    # Try static first
+    try:
+        result = await scrape_static(url)
+        if result.success:
+            logger.info(f"[static] Success for {url} ({len(result.text)} chars)")
+            return result
+        # If we got a clear server rejection, don't bother with enhanced
+        if result.failure_reason and any(code in result.failure_reason for code in ["403", "401", "Forbidden", "Unauthorized"]):
+            return result
+    except Exception as e:
+        logger.debug(f"[static] Exception for {url}: {e}")
 
-    for name, strategy_fn in strategies:
-        try:
-            result = await strategy_fn(url)
-            if result.success:
-                logger.info(f"[{name}] Success for {url} ({len(result.text)} chars)")
-                return result
-        except Exception as e:
-            logger.debug(f"[{name}] Exception for {url}: {e}")
-            continue
+    # Try enhanced as fallback
+    try:
+        result = await scrape_enhanced(url)
+        if result.success:
+            logger.info(f"[enhanced-static] Success for {url} ({len(result.text)} chars)")
+            return result
+    except Exception as e:
+        logger.debug(f"[enhanced-static] Exception for {url}: {e}")
 
     return ScrapeResult(
         url=url,
@@ -426,24 +535,25 @@ async def crawl_site(
             "method": seed_result.method,
         }
 
-        # Discover links from seed page
-        resp = await _fetch_page(url)
-        if resp and max_depth > 0:
-            soup = BeautifulSoup(resp.text, "html.parser")
-            discovered = _discover_links(
-                soup,
-                url,
-                max_links=max_pages,
-                focus_keywords=focus_keywords,
-                strict_focus=strict_focus,
-            )
-            to_visit.extend(discovered)
+        # Discover links from seed page using already-fetched content
+        if max_depth > 0:
+            resp = await _fetch_page(url)
+            if resp:
+                soup = BeautifulSoup(resp.text, "html.parser")
+                discovered = _discover_links(
+                    soup,
+                    url,
+                    max_links=max_pages,
+                    focus_keywords=focus_keywords,
+                    strict_focus=strict_focus,
+                )
+                to_visit.extend(discovered)
 
     # Crawl discovered pages concurrently
     remaining = [u for u in to_visit if u not in visited][:max_pages - 1]
 
     if remaining:
-        semaphore = asyncio.Semaphore(5)
+        semaphore = asyncio.Semaphore(10)
 
         async def _scrape_with_limit(page_url: str) -> Optional[ScrapeResult]:
             async with semaphore:

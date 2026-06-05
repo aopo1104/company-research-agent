@@ -108,6 +108,7 @@ def _is_company_relevant(doc: dict, company: str, company_url: str | None) -> bo
       1. 官网页面: 直接保留 (source == 'company_website')
       2. 官网域名: 来自公司官网域名的所有页面保留
       3. 公司名匹配: 全名/部分词/无空格版本匹配标题/URL/内容
+      4. 短名特殊处理: 长度≤4的token需要词边界匹配，避免误匹配（如 bol 匹配到 boliden）
       4. 返回True: 保留, False: 舍弃（不相关）
     """
     url = doc.get('url', '')
@@ -153,18 +154,26 @@ def _is_company_relevant(doc: dict, company: str, company_url: str | None) -> bo
     # Full company phrase or slug appearing anywhere is strong enough
     if company_lower and (company_lower in title_url_text or company_lower in content):
         return True
-    if company_slug and (company_slug in title_url_text or company_slug in content):
+    if company_slug and len(company_slug) > 4 and (company_slug in title_url_text or company_slug in content):
         return True
+
+    # For short company names (<=4 chars), use word-boundary regex to avoid substring matches
+    # e.g. "bol" should NOT match "boliden", "bolt", "bolttech"
+    def _word_boundary_match(token: str, text: str) -> bool:
+        if len(token) <= 4:
+            pattern = r'\b' + re.escape(token) + r'\b'
+            return bool(re.search(pattern, text))
+        return token in text
 
     # Distinctive tokens appearing in title or URL are acceptable
     distinctive_tokens = [t for t in company_tokens if t not in {company_lower, company_slug}]
     for token in distinctive_tokens:
-        if token in title_url_text:
+        if _word_boundary_match(token, title_url_text):
             return True
 
     # Content-only match requires at least two distinctive tokens to avoid generic matches
     if distinctive_tokens:
-        content_hits = sum(1 for token in distinctive_tokens if token in content)
+        content_hits = sum(1 for token in distinctive_tokens if _word_boundary_match(token, content))
         if content_hits >= 2:
             return True
 
@@ -172,7 +181,7 @@ def _is_company_relevant(doc: dict, company: str, company_url: str | None) -> bo
     for token in company_tokens:
         if token in GENERIC_COMPANY_TOKENS:
             continue
-        if token in title_url_text:
+        if _word_boundary_match(token, title_url_text):
             return True
 
     return False

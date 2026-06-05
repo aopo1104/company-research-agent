@@ -33,12 +33,12 @@ class SocialMediaAnalyzer(BaseResearcher):
             # General search without domain restriction
             return {
                 "search_depth": "basic",
-                "include_raw_content": False,
+                "include_raw_content": True,
                 "max_results": 5,
             }
         return {
             "search_depth": "advanced",
-            "include_raw_content": False,
+            "include_raw_content": True,
             "max_results": 8,
             "include_domains": SOCIAL_MEDIA_DOMAINS,
         }
