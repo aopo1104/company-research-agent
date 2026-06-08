@@ -5,6 +5,7 @@ import os
 import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import uvicorn
 from dotenv import load_dotenv
@@ -49,7 +50,7 @@ app.add_middleware(
 pdf_service = PDFService({"pdf_output_dir": "pdfs"})
 
 # MySQL 持久化（可选，配置 MYSQL_PASSWORD 环境变量即启用）
-mysql_service: MySQLService | None = None
+mysql_service: Any = None
 
 
 async def init_mysql() -> None:
