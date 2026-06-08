@@ -15,10 +15,16 @@ from pydantic import BaseModel
 
 from backend.graph import Graph
 from backend.services.mongodb import MongoDBService
-from backend.services.mysql_service import MySQLService
 from backend.services.pdf_service import PDFService
 from backend.classes.state import job_status
 from backend.prompt_templates import EMAIL_GENERATION_SYSTEM_PROMPT, QUICK_RESEARCH_SYSTEM_PROMPT
+
+try:
+    from backend.services.mysql_service import MySQLService
+    _mysql_import_error = None
+except Exception as e:
+    MySQLService = None  # type: ignore[assignment]
+    _mysql_import_error = e
 
 # Load environment variables from .env file at startup
 env_path = Path(__file__).parent / '.env'
@@ -49,6 +55,13 @@ mysql_service: MySQLService | None = None
 async def init_mysql() -> None:
     """启动时初始化 MySQL 连接池。"""
     global mysql_service
+
+    if MySQLService is None:
+        logger.warning(
+            f"MySQL persistence disabled because mysql dependency import failed: {_mysql_import_error}"
+        )
+        return
+
     mysql_password = os.getenv("MYSQL_PASSWORD")
     if not mysql_password:
         logger.info("MYSQL_PASSWORD not set, MySQL persistence disabled")
