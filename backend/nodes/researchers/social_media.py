@@ -3,7 +3,7 @@ from typing import Any, Dict
 from langchain_core.messages import AIMessage
 
 from ...classes import ResearchState
-from ...prompts import SOCIAL_MEDIA_ANALYZER_QUERY_PROMPT
+from ...prompt_templates import SOCIAL_MEDIA_ANALYZER_QUERY_PROMPT
 from .base import BaseResearcher
 
 

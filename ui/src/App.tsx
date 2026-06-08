@@ -34,15 +34,11 @@ function App() {
   const [isQueriesExpanded, setIsQueriesExpanded] = useState(true);
   const [enrichmentCounts, setEnrichmentCounts] = useState<{
     company: { total: number; enriched: number };
-    industry: { total: number; enriched: number };
-    financial: { total: number; enriched: number };
     news: { total: number; enriched: number };
     social_media: { total: number; enriched: number };
   } | undefined>(undefined);
   const [briefingStatus, setBriefingStatus] = useState({
     company: false,
-    industry: false,
-    financial: false,
     news: false,
     social_media: false
   });
@@ -109,8 +105,6 @@ function App() {
       setEnrichmentCounts(undefined);
       setBriefingStatus({
         company: false,
-        industry: false,
-        financial: false,
         news: false,
         social_media: false
       });
@@ -281,10 +275,9 @@ function App() {
         const getStepName = (nodeName: string): string => {
           const stepMap: Record<string, string> = {
             'grounding': '搜索',
-            'financial_analyst': '搜索',
             'news_scanner': '搜索',
-            'industry_analyst': '搜索',
             'company_analyst': '搜索',
+            'social_media_analyzer': '搜索',
             'collector': '搜索',
             'curator': '内容增强',
             'enricher': '内容增强',
@@ -303,7 +296,7 @@ function App() {
           });
           
           // Update phase based on step
-          if (['grounding', 'financial_analyst', 'news_scanner', 'industry_analyst', 'company_analyst', 'collector'].includes(data.step)) {
+          if (['grounding', 'news_scanner', 'company_analyst', 'social_media_analyzer', 'collector'].includes(data.step)) {
             setCurrentPhase('search');
           } else if (['curator', 'enricher'].includes(data.step)) {
             setCurrentPhase('enrichment');
@@ -399,7 +392,7 @@ function App() {
           });
           // Update enriched count if provided
           if (data.category && data.enriched !== undefined) {
-            const category = data.category as 'company' | 'industry' | 'financial' | 'news';
+            const category = data.category as 'company' | 'news' | 'social_media';
             setEnrichmentCounts(prev => {
               if (!prev) return prev;
               return {

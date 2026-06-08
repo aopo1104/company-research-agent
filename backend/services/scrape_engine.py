@@ -150,6 +150,34 @@ USER_AGENT = (
     "Chrome/125.0.0.0 Safari/537.36"
 )
 
+# ---------------------------------------------------------------------------
+# 连接池管理 - 复用 TCP 连接提高成功率和速度
+# ---------------------------------------------------------------------------
+_shared_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_client() -> httpx.AsyncClient:
+    """获取共享的 httpx 连接池客户端（懒初始化）。
+    
+    连接池优势:
+      - 复用 TCP/TLS 连接，减少握手开销
+      - 避免频繁 DNS 查询
+      - 提高并发抓取的成功率和速度
+    """
+    global _shared_client
+    if _shared_client is None or _shared_client.is_closed:
+        _shared_client = httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0),
+            verify=False,
+            limits=httpx.Limits(
+                max_connections=50,
+                max_keepalive_connections=20,
+                keepalive_expiry=30.0,
+            ),
+        )
+    return _shared_client
+
 # 样板文本模式 - 需要移除的通用页面元素
 BOILERPLATE_PATTERNS = [
     re.compile(r"skip to (content|main|navigation)", re.I),
@@ -384,7 +412,7 @@ def _discover_links(
 
 
 async def _fetch_page(url: str, enhanced: bool = False) -> Optional[httpx.Response]:
-    """Fetch a page with httpx."""
+    """Fetch a page with httpx using shared connection pool."""
     headers = {"User-Agent": USER_AGENT}
     if enhanced:
         parsed = urlparse(url)
@@ -399,18 +427,14 @@ async def _fetch_page(url: str, enhanced: bool = False) -> Optional[httpx.Respon
         })
 
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True,
-            timeout=10.0,
-            verify=False,
-        ) as client:
-            resp = await client.get(url, headers=headers)
-            if resp.status_code == 200 and len(resp.text) > 500:
-                return resp
-            logger.debug(f"Fetch returned status {resp.status_code} for {url}")
-            # Store status code for caller to check rejection
-            resp._scrape_status = resp.status_code
-            return resp if resp.status_code in (403, 401) else None
+        client = _get_shared_client()
+        resp = await client.get(url, headers=headers)
+        if resp.status_code == 200 and len(resp.text) > 500:
+            return resp
+        logger.debug(f"Fetch returned status {resp.status_code} for {url}")
+        # Store status code for caller to check rejection
+        resp._scrape_status = resp.status_code
+        return resp if resp.status_code in (403, 401) else None
     except Exception as e:
         logger.debug(f"Fetch failed for {url}: {e}")
         return None

@@ -41,8 +41,6 @@ from ..classes import ResearchState
 from ..classes.state import job_status
 from ..prompts import (
     COMPANY_BRIEFING_PROMPT,
-    INDUSTRY_BRIEFING_PROMPT,
-    FINANCIAL_BRIEFING_PROMPT,
     NEWS_BRIEFING_PROMPT,
     SOCIAL_MEDIA_BRIEFING_PROMPT,
     BRIEFING_ANALYSIS_INSTRUCTION
@@ -96,8 +94,6 @@ class Briefing:
         """
         prompts = {
             'company': COMPANY_BRIEFING_PROMPT,
-            'industry': INDUSTRY_BRIEFING_PROMPT,
-            'financial': FINANCIAL_BRIEFING_PROMPT,
             'news': NEWS_BRIEFING_PROMPT,
             'social_media': SOCIAL_MEDIA_BRIEFING_PROMPT,
         }
@@ -287,9 +283,7 @@ class Briefing:
         
         # Mapping of curated data fields to briefing categories
         categories = {
-            'financial_data': ("financial", "financial_briefing"),
             'news_data': ("news", "news_briefing"),
-            'industry_data': ("industry", "industry_briefing"),
             'company_data': ("company", "company_briefing"),
             'social_media_data': ("social_media", "social_media_briefing")
         }

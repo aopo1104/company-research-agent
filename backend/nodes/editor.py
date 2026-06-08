@@ -2,16 +2,16 @@
 ================================================================================
 editor.py - 报告编译阶段 (Stage 8)
 ================================================================================
-使用Azure GPT-4o将5份简报整合为最终的Markdown研究报告
+使用Azure GPT-4o将3份简报整合为最终的Markdown研究报告
 
-输入: company_briefing, industry_briefing, financial_briefing, news_briefing, social_media_briefing
+输入: company_briefing, news_briefing, social_media_briefing
       + reference_titles, reference_info (引用信息)
 输出: report (最终Markdown报告，流式生成)
 
 2阶段编译流程:
 
 第1阶段 - 内容汇编 (Compile):
-  - 输入: 5份独立简报
+    - 输入: 3份独立简报
   - 任务: 整合为连贯的叙述（非简单拼接）
   - 去重: 移除重复内容
   - 流式: 逐段返回
@@ -62,7 +62,7 @@ from langchain_core.output_parsers import StrOutputParser
 from ..classes import ResearchState
 from ..classes.state import job_status
 from ..utils.references import format_references_section, normalize_url
-from ..prompts import (
+from ..prompt_templates import (
     EDITOR_SYSTEM_MESSAGE,
     COMPILE_CONTENT_PROMPT,
     CONTENT_SWEEP_SYSTEM_MESSAGE,
@@ -308,8 +308,6 @@ class Editor:
 
         for field in (
             "curated_company_data",
-            "curated_industry_data",
-            "curated_financial_data",
             "curated_news_data",
             "curated_social_media_data",
         ):
@@ -444,11 +442,16 @@ class Editor:
         # Pull individual briefings from dedicated state keys
         briefing_keys = {
             'company': 'company_briefing',
-            'industry': 'industry_briefing',
-            'financial': 'financial_briefing',
             'news': 'news_briefing',
             'social_media': 'social_media_briefing'
         }
+
+        # 诊断：打印 state 中与 briefing 相关的键值情况
+        briefing_state_dump = {k: (len(state.get(k, '') or '') if isinstance(state.get(k), str) else type(state.get(k)).__name__) for k in briefing_keys.values()}
+        curated_state_dump = {k: (len(state.get(k, {})) if isinstance(state.get(k), dict) else type(state.get(k)).__name__) for k in ['curated_company_data', 'curated_news_data', 'curated_social_media_data']}
+        logger.info(f"[editor] State briefing keys: {briefing_state_dump}")
+        logger.info(f"[editor] State curated keys: {curated_state_dump}")
+        logger.info(f"[editor] All state keys: {sorted(state.keys())}")
 
         individual_briefings = {}
         for category, key in briefing_keys.items():
@@ -561,8 +564,6 @@ class Editor:
         # Label each briefing so LLM knows which category it belongs to
         category_labels = {
             'company': '【公司简报】',
-            'industry': '【行业简报】',
-            'financial': '【财务简报】',
             'news': '【新闻简报】',
             'social_media': '【社媒简报】'
         }

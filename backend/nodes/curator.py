@@ -4,19 +4,19 @@ curator.py - 内容筛选阶段 (Stage 5)
 ================================================================================
 对收集的文档进行评分、去重、过滤，保留高质量的相关文档
 
-输入: company_data, industry_data, financial_data, news_data (~80个文档)
-输出: curated_*_data (~55个文档), reference_titles, reference_info
+输入: company_data, news_data, social_media_data (~60个文档)
+输出: curated_*_data (~40个文档), reference_titles, reference_info
 
 筛选规则:
   1. URL规范化去重: 统一格式，移除query/fragment
   2. 低价值URL过滤: 登录页、搜索结果、社交媒体等
   3. 评分筛选: Tavily score ≥ 0.4 或 官网来源
   4. 垃圾内容检测: 过滤Dictionary.com定义页等
-  5. 行业相关性检查: industry类别需验证内容相关性
+    5. 公司相关性检查: company/news类别需验证内容相关性
   6. Top 30限制: 每个类别最多保留30个文档
   7. 引用收集: 保存所有URL的标题和元信息
 
-效果: 73文档 → 55文档 (75%通过率)
+效果: 60文档 → 40文档 (约67%通过率)
 """
 
 import logging
@@ -41,68 +41,10 @@ GENERIC_COMPANY_TOKENS = {
 }
 
 
-def _is_industry_relevant(doc: dict, company: str, industry: str, company_url: str | None) -> bool:
-    """检测文档是否与行业/公司相关
-    
-    用途: 对industry_data进行额外的内容相关性检查
-         过滤明显无关的页面（如Dictionary.com的定义页）
-    
-    逻辑:
-      1. 官网域名优先: 官网所有页面都保留
-      2. 关键词匹配: 公司名 + 行业词出现在标题/内容
-      3. 业务关键词: market, industry, revenue, growth等
-      4. 返回True: 保留, False: 舍弃
-    """
-    url = doc.get('url', '').lower()
-    title = (doc.get('title', '') or '').lower()
-    content = (doc.get('raw_content', '') or doc.get('content', '') or '')[:3000].lower()
-
-    # Always keep company domain pages
-    if company_url:
-        try:
-            company_domain = urlparse(company_url).netloc.replace('www.', '')
-            doc_domain = urlparse(url).netloc.replace('www.', '')
-            if company_domain and company_domain in doc_domain:
-                return True
-        except Exception:
-            pass
-
-    # Build relevance tokens from company name + industry
-    tokens = []
-    company_lower = company.lower()
-    tokens.append(company_lower)
-    words = [w for w in re.split(r'[\s\-&+.,]+', company_lower) if len(w) > 2]
-    tokens.extend(words)
-    
-    # Add industry tokens
-    if industry:
-        industry_lower = industry.lower()
-        tokens.append(industry_lower)
-        industry_words = [w for w in re.split(r'[\s\-&+.,]+', industry_lower) if len(w) > 3]
-        tokens.extend(industry_words)
-
-    # Check if any relevant token appears in title or content
-    text = title + ' ' + content
-    for token in tokens:
-        if token in text:
-            return True
-
-    # Also check for common industry-related keywords that indicate market/business content
-    # 业务关键词检查: 如果标题包含industry/market等，即使未提及公司名也认为相关
-    business_keywords = ['market', 'industry', 'revenue', 'growth', 'competitor', 'trend', 'forecast',
-                         'furniture', 'office', 'ergonomic', 'workspace', 'commercial', 'b2b',
-                         'supplier', 'manufacturer', 'retail', 'wholesale', 'distribution']
-    for kw in business_keywords:
-        if kw in title:
-            return True
-
-    return False
-
-
 def _is_company_relevant(doc: dict, company: str, company_url: str | None) -> bool:
     """检测文档是否与目标公司直接相关
     
-    用途: 对company_data和financial_data进行严格相关性过滤
+    用途: 对company_data/news_data进行严格相关性过滤
     
     逻辑:
       1. 官网页面: 直接保留 (source == 'company_website')
@@ -204,13 +146,13 @@ class Curator:
           1. 低价值URL过滤: 登录页、搜索结果等直接跳过
           2. 评分检查: Tavily score ≥ 0.4 或 官网来源保留
           3. 官网加分: source='company_website'的文档给0.5基础分
-          4. 相关性验证: 严格类别(company/financial/news)需要验证公司提及
+          4. 相关性验证: 严格类别(company/news)需要验证公司提及
           5. 排序: 按score降序排列
         
         Args:
             docs: 文档列表
             context: {company, company_url, industry, ...}
-            category: 类别 (company/financial/news/industry) - 决定严格程度
+            category: 类别 (company/news/social_media) - 决定严格程度
             
         Returns:
             过滤后的文档列表 (已排序)
@@ -225,7 +167,7 @@ class Curator:
         
         # For industry data, we allow general market/industry reports
         # For company/financial/news data, we strictly require company mention
-        strict_filter = category in ('company', 'financial', 'news')
+        strict_filter = category in ('company', 'news')
         
         evaluated_docs = []
         skipped_irrelevant = 0
@@ -250,20 +192,11 @@ class Curator:
                     
                     # Keep documents with good Tavily score or company website data
                     if tavily_score >= self.relevance_threshold or is_company_website:
-                        # ADDITIONAL CHECK: verify the document is actually about the target company
-                        # For company/financial/news categories, strictly require company mention
-                        # For industry category, allow general market reports but filter obvious garbage
+                        # For company/news categories, strictly require company mention
                         if not is_company_website and strict_filter and not _is_company_relevant(doc, company, company_url):
                             skipped_irrelevant += 1
                             logger.info(f"Document REJECTED (not about {company}) score {tavily_score:.4f}: '{doc.get('title', 'No title')}' URL={doc.get('url', '')}")
                             continue
-                        
-                        # For industry category: filter pages that are clearly unrelated to the industry
-                        if not is_company_website and not strict_filter and category == 'industry':
-                            if not _is_industry_relevant(doc, company, industry, company_url):
-                                skipped_irrelevant += 1
-                                logger.info(f"Document REJECTED (not industry relevant) score {tavily_score:.4f}: '{doc.get('title', 'No title')}' URL={doc.get('url', '')}")
-                                continue
 
                         reason = "company website" if is_company_website else f"score {tavily_score:.4f}"
                         logger.info(f"Document kept ({reason}) for '{doc.get('title', 'No title')}')")
@@ -311,9 +244,7 @@ class Curator:
         msg = [f"🔍 Curating research data for {company}"]
         
         data_types = {
-            'financial_data': ('💰 Financial', 'financial'),
             'news_data': ('📰 News', 'news'),
-            'industry_data': ('🏭 Industry', 'industry'),
             'company_data': ('🏢 Company', 'company'),
             'social_media_data': ('📱 Social Media', 'social_media')
         }

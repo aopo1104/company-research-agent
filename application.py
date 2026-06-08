@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from backend.graph import Graph
 from backend.services.mongodb import MongoDBService
+from backend.services.mysql_service import MySQLService
 from backend.services.pdf_service import PDFService
 from backend.classes.state import job_status
 from backend.prompt_templates import EMAIL_GENERATION_SYSTEM_PROMPT, QUICK_RESEARCH_SYSTEM_PROMPT
@@ -40,6 +41,41 @@ app.add_middleware(
     allow_headers=["*"],
 )
 pdf_service = PDFService({"pdf_output_dir": "pdfs"})
+
+# MySQL 持久化（可选，配置 MYSQL_PASSWORD 环境变量即启用）
+mysql_service: MySQLService | None = None
+
+
+async def init_mysql() -> None:
+    """启动时初始化 MySQL 连接池。"""
+    global mysql_service
+    mysql_password = os.getenv("MYSQL_PASSWORD")
+    if not mysql_password:
+        logger.info("MYSQL_PASSWORD not set, MySQL persistence disabled")
+        return
+    try:
+        mysql_service = MySQLService(
+            host=os.getenv("MYSQL_HOST", "127.0.0.1"),
+            port=int(os.getenv("MYSQL_PORT", "3306")),
+            user=os.getenv("MYSQL_USER", "root"),
+            password=mysql_password,
+            database=os.getenv("MYSQL_DATABASE", "company_research"),
+        )
+        await mysql_service.connect()
+    except Exception as e:
+        logger.warning(f"Failed to initialize MySQL: {e}. Continuing without MySQL persistence.")
+        mysql_service = None
+
+
+@app.on_event("startup")
+async def on_startup():
+    await init_mysql()
+
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    if mysql_service:
+        await mysql_service.close()
 
 
 def extract_failed_stage(error_message: str, fallback: str | None = None) -> str:
@@ -229,8 +265,12 @@ async def research_quick(data: ResearchRequest):
         search_context = "\n\n---\n\n".join(combined_content[:15])
 
         # Step 2: Single LLM call to generate full report
+        if azure_instance.endswith(".openai.azure.com"):
+            azure_endpoint = f"https://{azure_instance}"
+        else:
+            azure_endpoint = f"https://{azure_instance}.openai.azure.com"
         llm = AzureChatOpenAI(
-            azure_endpoint=f"https://{azure_instance}.openai.azure.com",
+            azure_endpoint=azure_endpoint,
             azure_deployment=azure_deployment,
             api_version=azure_version,
             api_key=azure_api_key,
@@ -274,6 +314,16 @@ async def process_research(job_id: str, data: ResearchRequest):
 
         if mongodb:
             mongodb.create_job(job_id, data.dict())
+
+        # MySQL: 保存公司信息
+        if mysql_service:
+            await mysql_service.save_company(
+                job_id=job_id,
+                company_url=data.company_url,
+                company_name=data.company,
+                industry=data.industry,
+                hq_location=data.hq_location,
+            )
         
         await asyncio.sleep(0.5)  # Brief delay
         
@@ -318,6 +368,14 @@ async def process_research(job_id: str, data: ResearchRequest):
             if mongodb:
                 mongodb.update_job(job_id=job_id, status="completed")
                 mongodb.store_report(job_id=job_id, report_data={"report": report_content})
+
+            # MySQL: 保存研究报告
+            if mysql_service:
+                await mysql_service.save_report(
+                    job_id=job_id,
+                    company_name=data.company,
+                    report_content=report_content,
+                )
             
             logger.info(f"Research completed successfully for {data.company}")
         else:
@@ -543,6 +601,16 @@ async def generate_email(data: EmailGenerationRequest):
         json_match = re.search(r'\{[\s\S]*\}', result_text)
         if json_match:
             email_data = json.loads(json_match.group())
+
+            # MySQL: 保存开发信
+            if mysql_service:
+                await mysql_service.save_email(
+                    company_name=data.company_name,
+                    subject=email_data.get("subject"),
+                    body=email_data.get("body", result_text),
+                    email_json=email_data,
+                )
+
             return JSONResponse(content=email_data)
         else:
             raise ValueError("LLM did not return valid JSON")

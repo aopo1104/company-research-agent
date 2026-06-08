@@ -29,7 +29,7 @@ from typing import Any
 from langchain_core.messages import AIMessage
 
 from ...classes import ResearchState
-from ...prompts import COMPANY_ANALYZER_QUERY_PROMPT
+from ...prompt_templates import COMPANY_ANALYZER_QUERY_PROMPT
 from .base import BaseResearcher
 
 

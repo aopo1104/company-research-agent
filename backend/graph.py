@@ -13,8 +13,6 @@ from .nodes.editor import Editor
 from .nodes.enricher import Enricher
 from .nodes.researchers import (
     CompanyAnalyzer,
-    FinancialAnalyst,
-    IndustryAnalyzer,
     NewsScanner,
     SocialMediaAnalyzer,
 )
@@ -42,9 +40,7 @@ class Graph:
     def _init_nodes(self):
         """Initialize all workflow nodes"""
         self.ground = GroundingNode()
-        self.financial_analyst = FinancialAnalyst()
         self.news_scanner = NewsScanner()
-        self.industry_analyst = IndustryAnalyzer()
         self.company_analyst = CompanyAnalyzer()
         self.social_media_analyzer = SocialMediaAnalyzer()
         self.collector = Collector()
@@ -59,9 +55,7 @@ class Graph:
         
         # Add nodes with their respective processing functions
         self.workflow.add_node("grounding", self.ground.run)
-        self.workflow.add_node("financial_analyst", self.financial_analyst.run)
         self.workflow.add_node("news_scanner", self.news_scanner.run)
-        self.workflow.add_node("industry_analyst", self.industry_analyst.run)
         self.workflow.add_node("company_analyst", self.company_analyst.run)
         self.workflow.add_node("social_media_analyzer", self.social_media_analyzer.run)
         self.workflow.add_node("collector", self.collector.run)
@@ -75,9 +69,7 @@ class Graph:
         self.workflow.set_finish_point("editor")
         
         research_nodes = [
-            "financial_analyst", 
             "news_scanner",
-            "industry_analyst", 
             "company_analyst",
             "social_media_analyzer"
         ]

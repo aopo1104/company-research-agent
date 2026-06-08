@@ -2,10 +2,10 @@
 ================================================================================
 collector.py - 数据汇总阶段 (Stage 4)
 ================================================================================
-统计4个研究类别收集的文档数量，为后续筛选准备数据
+统计3个研究类别收集的文档数量，为后续筛选准备数据
 
-输入: company_data, industry_data, financial_data, news_data
-      (来自4个并行研究节点)
+输入: company_data, news_data, social_media_data
+      (来自3个并行研究节点)
 输出: (同上) + 汇总统计消息
 
 功能:
@@ -40,10 +40,9 @@ class Collector:
         """统计所有研究数据
         
         检查项:
-          - financial_data: 财务相关文档
           - news_data: 新闻相关文档
-          - industry_data: 行业相关文档
           - company_data: 公司相关文档
+          - social_media_data: 社媒相关文档
         
         Args:
             state: 工作流状态
@@ -56,10 +55,9 @@ class Collector:
         
         # 检查各类别数据
         research_types = {
-            'financial_data': '💰 Financial',
             'news_data': '📰 News',
-            'industry_data': '🏭 Industry',
-            'company_data': '🏢 Company'
+            'company_data': '🏢 Company',
+            'social_media_data': '📱 Social Media'
         }
         
         for data_field, label in research_types.items():

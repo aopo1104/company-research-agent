@@ -21,8 +21,6 @@ interface CurationExtractionProps {
 
 const CATEGORY_LABELS: Record<string, string> = {
   company: '公司',
-  industry: '行业',
-  financial: '财务',
   news: '新闻',
   social_media: '社媒'
 };
@@ -67,8 +65,8 @@ const CurationExtraction = ({
         isExpanded ? 'mt-4 max-h-[3000px] opacity-100' : 'max-h-0 opacity-0'
       }`}>
         {/* Summary cards */}
-        <div className="grid grid-cols-5 gap-4 mb-4">
-          {['company', 'industry', 'financial', 'news', 'social_media'].map((category) => {
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          {['company', 'news', 'social_media'].map((category) => {
             const counts = enrichmentCounts?.[category as keyof EnrichmentCounts];
             const details = curationDetails[category];
             const hasDetails = details && details.length > 0;

@@ -36,10 +36,10 @@ const ResearchQueries = ({
         isExpanded ? 'mt-4 max-h-[9999px] opacity-100' : 'max-h-0 opacity-0'
       }`}>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {['company', 'industry', 'financial', 'news', 'social_media'].map((category) => (
+          {['company', 'news', 'social_media'].map((category) => (
             <div key={category} className={`${glassStyle} rounded-xl p-3`}>
               <h3 className="text-base font-medium text-gray-900 mb-3">
-                {({'company':'公司','industry':'行业','financial':'财务','news':'新闻','social_media':'社媒'} as Record<string,string>)[category] || category}查询
+                {({'company':'公司','news':'新闻','social_media':'社媒'} as Record<string,string>)[category] || category}查询
               </h3>
               <div className="space-y-2">
                 {/* Show streaming queries first */}
@@ -67,7 +67,7 @@ const ResearchQueries = ({
       
       {!isExpanded && (
         <div className="mt-2 text-sm text-gray-600">
-          已在 {['company', 'industry', 'financial', 'news'].length} 个类别中生成 {queries.length} 条查询
+          已在 {['company', 'news', 'social_media'].length} 个类别中生成 {queries.length} 条查询
         </div>
       )}
     </div>

@@ -12,8 +12,6 @@ export type ResearchOutput = {
 
 export type EnrichmentCounts = {
   company: { total: number; enriched: number };
-  industry: { total: number; enriched: number };
-  financial: { total: number; enriched: number };
   news: { total: number; enriched: number };
   social_media: { total: number; enriched: number };
 };

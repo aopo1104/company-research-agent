@@ -1,5 +1,5 @@
 """
-Briefing prompts for the four research analyst nodes.
+Briefing prompts for the research analyst nodes.
 Each prompt generates a structured sub-report (分报告) from scraped documents.
 """
 
@@ -61,80 +61,6 @@ Key requirements:
 5. No paragraphs, only bullet points
 6. Provide only the briefing. No explanations or commentary.
 7. IMPORTANT: After each fact/sentence, add an inline citation linking to the source URL in the format [来源](url). Use the Source URL provided with each document. Example: * 该公司成立于2020年 [来源](https://example.com/about)
-""" + _NO_HALLUCINATION
-
-
-INDUSTRY_BRIEFING_PROMPT = """Create a focused, yet comprehensive industry briefing for {company}, a {industry} company based in {hq_location}.
-Key requirements:
-1. Output the entire briefing in Chinese (简体中文). All content must be written in Chinese.
-2. Structure using these exact headers and bullet points:
-
-### 市场概况与规模
-* State {company}'s exact market segment
-* List market size with year
-* List growth rate with year range
-* Identify fastest-growing sub-segments
-
-### 行业痛点与未满足需求
-* List key pain points that customers in this industry face
-* Identify gaps in current market offerings
-* Note emerging demands or shifts in buyer behavior
-* Highlight opportunities where {company}'s products can fill gaps
-
-### 竞争格局
-* List named direct competitors and their key products
-* Compare pricing strategies across competitors
-* Identify competitor weaknesses that create promotion opportunities
-* Note market positioning gaps
-
-### 推广趋势与渠道洞察
-* List effective marketing/promotion channels in this industry
-* Note successful promotion strategies used by competitors
-* Identify trending topics or content angles for promotion
-* Suggest timing and seasonal factors for campaigns
-
-3. Each bullet must be a single, complete fact.
-4. No paragraphs, only bullet points
-5. If a section has no supporting evidence in the documents, write "* 在现有资料中未找到相关信息" for that section.
-6. Provide only the briefing. No explanation.
-7. IMPORTANT: After each fact/sentence, add an inline citation linking to the source URL in the format [来源](url). Use the Source URL provided with each document. Example: * 市场规模达100亿美元 [来源](https://example.com/report)
-""" + _NO_HALLUCINATION
-
-
-FINANCIAL_BRIEFING_PROMPT = """Create a focused, yet comprehensive financial briefing for {company}, a {industry} company based in {hq_location}.
-Key requirements:
-1. Output the entire briefing in Chinese (简体中文). All content must be written in Chinese.
-2. Structure using these headers and bullet points:
-
-### 融资与投资
-* Total funding amount with date
-* List each funding round with date
-* List named investors
-
-### 营收模式与定价
-* Discuss product/service pricing tiers and strategies
-* Identify high-margin products suitable for promotion
-* Note pricing advantages vs competitors
-
-### 供应链与采购渠道
-* List known suppliers and procurement partners ONLY if explicitly mentioned in documents
-* Note any evidence of sourcing from China (import records, Chinese manufacturers, trade data) ONLY with hard evidence
-* Identify product categories they procure internationally
-* Note trade shows attended or sourcing platforms used (e.g. Alibaba, Canton Fair, Global Sources)
-* ⚠️ CRITICAL: Do NOT fabricate procurement amounts, supplier names, or trade records. If no evidence exists, write: "* 在现有资料中未找到明确的供应链或采购信息"
-
-### 推广预算与ROI洞察
-* Note any known marketing/promotion spend
-* Identify cost-effective promotion opportunities
-* Suggest budget allocation priorities based on product margins
-
-3. Include specific numbers when possible
-4. No paragraphs, only bullet points
-5. If a section has no supporting evidence in the documents, write "* 在现有资料中未找到相关信息" for that section.
-6. NEVER repeat the same round of funding multiple times. ALWAYS assume that multiple funding rounds in the same month are the same round.
-7. NEVER include a range of funding amounts. Use your best judgement to determine the exact amount based on the information provided.
-8. Provide only the briefing. No explanation or commentary.
-9. IMPORTANT: After each fact/sentence, add an inline citation linking to the source URL in the format [来源](url). Use the Source URL provided with each document. Example: * A轮融资1000万美元 [来源](https://example.com/funding)
 """ + _NO_HALLUCINATION
 
 
