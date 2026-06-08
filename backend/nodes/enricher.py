@@ -26,6 +26,7 @@ import asyncio
 import logging
 import os
 from typing import Dict, List
+from dataclasses import dataclass
 
 from langchain_core.messages import AIMessage
 from tavily import AsyncTavilyClient
@@ -35,6 +36,24 @@ from ..classes.state import job_status
 from ..services.scrape_engine import DomainCircuitBreaker, extract_url_content
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ExtractBudget:
+    limit: int
+    used: int = 0
+    lock: asyncio.Lock | None = None
+
+    def __post_init__(self) -> None:
+        if self.lock is None:
+            self.lock = asyncio.Lock()
+
+    async def try_acquire(self) -> bool:
+        async with self.lock:
+            if self.used >= self.limit:
+                return False
+            self.used += 1
+            return True
 
 
 class Enricher:
@@ -49,7 +68,8 @@ class Enricher:
         self.batch_size = 20  # 每批20个URL
 
     async def fetch_single_content(self, url: str, job_id: str = None,
-                                   circuit_breaker: DomainCircuitBreaker = None) -> tuple:
+                                   circuit_breaker: DomainCircuitBreaker = None,
+                                   extract_budget: ExtractBudget | None = None) -> tuple:
         """获取单个URL的内容 - 自研爬虫优先，Tavily兜底
         
         Args:
@@ -106,6 +126,15 @@ class Enricher:
             logger.debug(f"Custom scraper failed for {url}: {e}")
 
         # Fallback to Tavily extract (15s timeout)
+        if extract_budget is not None:
+            can_use_tavily = await extract_budget.try_acquire()
+            if not can_use_tavily:
+                logger.info(f"[Enricher] Tavily extract budget exhausted, skip fallback: {url}")
+                _emit("failed", f"Tavily预算耗尽，跳过兜底: {url[:70]}")
+                if circuit_breaker:
+                    circuit_breaker.record_failure(url)
+                return (url, '', 'failed')
+
         try:
             result = await asyncio.wait_for(self.tavily_client.extract(url), timeout=15)
             if result and result.get('results'):
@@ -126,7 +155,8 @@ class Enricher:
         return (url, '', 'failed')
 
     async def fetch_raw_content(self, urls: List[str], job_id: str = None,
-                               circuit_breaker: DomainCircuitBreaker = None) -> Dict[str, str]:
+                               circuit_breaker: DomainCircuitBreaker = None,
+                               extract_budget: ExtractBudget | None = None) -> Dict[str, str]:
         """批量获取多个URL的完整内容 - 支持并发、速率限制和自适应熔断
         
         策略:
@@ -154,7 +184,8 @@ class Enricher:
         async def process_batch(batch_urls: List[str]) -> List[tuple]:
             async with semaphore:
                 tasks = [self.fetch_single_content(url, job_id=job_id,
-                                                  circuit_breaker=circuit_breaker)
+                                                  circuit_breaker=circuit_breaker,
+                                                  extract_budget=extract_budget)
                          for url in batch_urls]
                 return await asyncio.gather(*tasks)
 
@@ -192,15 +223,18 @@ class Enricher:
         logger.info(f"Starting enrichment for company: {company}, job_id={job_id}")
         msg = [f"📚 Enriching curated data for {company}:"]
 
+        # Per-job Tavily extract budget to cap credit usage in Enricher
+        extract_limit = int(os.getenv("ENRICHER_TAVILY_EXTRACT_LIMIT_PER_JOB", "12"))
+        extract_budget = ExtractBudget(limit=extract_limit)
+        logger.info(f"[Enricher] Tavily extract per-job limit={extract_limit}")
+
         # 创建本次任务的域名熔断器（任务结束自动丢弃，不影响下次）
         # 粒度: 域名+路径前缀，连续失败2次即熔断该路径组
         circuit_breaker = DomainCircuitBreaker(failure_threshold=2)
 
         # Process each type of curated data
         data_types = {
-            'financial_data': '💰 Financial',
             'news_data': '📰 News',
-            'industry_data': '🏭 Industry',
             'company_data': '🏢 Company',
             'social_media_data': '📱 Social Media'
         }
@@ -225,7 +259,7 @@ class Enricher:
             
             msg.append(f"\n• Enriching {len(docs_needing_content)} {label} documents...")
 
-            # Extract category name from field (e.g., 'curated_financial_data' -> 'financial')
+            # Extract category name from field (e.g., 'curated_social_media_data' -> 'social_media')
             category = curated_field.replace('curated_', '').replace('_data', '')
             
             enrichment_tasks.append({
@@ -253,7 +287,8 @@ class Enricher:
                 try:
                     raw_contents = await self.fetch_raw_content(
                         list(task['docs'].keys()), job_id=job_id,
-                        circuit_breaker=circuit_breaker)
+                        circuit_breaker=circuit_breaker,
+                        extract_budget=extract_budget)
                     
                     enriched_count = 0
                     for url, content in raw_contents.items():

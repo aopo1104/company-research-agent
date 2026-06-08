@@ -1,5 +1,5 @@
 """
-Search query generation prompts for all four researcher nodes.
+Search query generation prompts for all researcher nodes.
 These prompts generate targeted search queries for Tavily.
 """
 
@@ -32,17 +32,15 @@ Hard requirements for generated queries:
 COMPANY_ANALYZER_QUERY_PROMPT = f"""You are a B2B sales research expert for {SELLER_NAME_EN}.
 {SELLER_NAME_EN} sells: {SELLER_PRODUCTS_SHORT_EN}.
 
-Your task: Generate 8 targeted search queries to research {{company}} ({{industry}}, {{hq_location}}).
+Your task: Generate 5 targeted search queries to research {{company}} ({{industry}}, {{hq_location}}).
 
 Focus areas for queries:
 1. Core products/services offered by the company
 2. Target customers and market segments
 3. Enterprise nature: is the company a manufacturer, retailer, reseller, or brand?
-4. Self-manufacturing capability: does the company have its own factory or production line? (自产能力)
-5. Sales channels (website, Amazon, physical stores, distributors)
-6. Company background and founding story
-7. Recent product launches or business updates
-8. Procurement/sourcing from China (中国采购记录, Chinese suppliers, import records)
+4. Sales channels (website, Amazon, physical stores, distributors)
+5. Recent product launches or business updates
+6. Procurement/sourcing from China (中国采购记录, Chinese suppliers, import records)
 
 Examples of good queries:
 - "{{company}} manufacturer or reseller own factory production"
@@ -56,78 +54,29 @@ Examples of good queries:
 """ + QUERY_FORMAT_GUIDELINES
 
 
-FINANCIAL_ANALYZER_QUERY_PROMPT = f"""You are a B2B sales research expert for {SELLER_NAME_EN}.
-Your task: Generate 8 targeted search queries to research the financial situation and supply chain of {{company}} ({{industry}}, {{hq_location}}).
-
-Focus areas for queries:
-1. Funding rounds and investors
-2. Revenue, valuation, or financial metrics
-3. Business model and pricing strategy
-4. Supply chain and procurement channels
-5. Sourcing from China or Chinese manufacturers (供应链中国采购)
-6. Trade show attendance (e.g. Canton Fair, Global Sources, Alibaba)
-7. Import/export records or customs data related to the company
-8. Marketing/promotion budget or spend signals
-
-Examples of good queries:
-- "{{company}} funding rounds investors valuation"
-- "{{company}} revenue annual report financial"
-- "{{company}} China import customs records sourcing"
-- "{{company}} supplier manufacturer China trade data"
-- "{{company}} Canton Fair Global Sources Alibaba sourcing"
-- "site:{{company}} procurement suppliers product lines"
-
-""" + QUERY_FORMAT_GUIDELINES
-
-
-INDUSTRY_ANALYZER_QUERY_PROMPT = f"""You are a B2B sales research expert for {SELLER_NAME_EN}.
-Your task: Generate 8 targeted search queries to research the industry landscape for {{company}} ({{industry}}, {{hq_location}}).
-
-Focus areas for queries:
-1. Market size and growth trends in this industry
-2. Key competitors and their products/strategies
-3. Industry pain points and unmet customer needs
-4. Emerging trends and technology shifts
-5. Distribution and marketing channels used in this space
-6. Regulatory or compliance factors
-7. Buyer behavior and purchasing patterns
-8. Opportunities for ergonomic/lifting product suppliers in this market
-9. Product/category structures used by competitors in this industry
-
-""" + QUERY_FORMAT_GUIDELINES
-
-
 NEWS_SCANNER_QUERY_PROMPT = f"""You are a B2B sales research expert for {SELLER_NAME_EN}.
-Your task: Generate 8 targeted search queries to find the latest news and events about {{company}} ({{industry}}, {{hq_location}}).
+Your task: Generate 5 targeted search queries to find the latest news and events about {{company}} ({{industry}}, {{hq_location}}).
 
 Focus areas for queries:
 1. Recent product launches or updates (last 12 months)
-2. New partnerships or distribution agreements
-3. Promotional campaigns or sales events
-4. Customer reviews and brand reputation
-5. Awards, media coverage, or recognition
-6. Expansion plans or new market entries
-7. Leadership changes or company announcements
-8. Social media buzz or trending content related to {{company}}
+2. Promotional campaigns or sales events
+3. Customer reviews and brand reputation
 
 """ + QUERY_FORMAT_GUIDELINES
 
 
 SOCIAL_MEDIA_ANALYZER_QUERY_PROMPT = f"""You are a B2B sales research expert for {SELLER_NAME_EN}.
-Your task: Generate 8 targeted search queries to find social media content and digital presence for {{company}} ({{industry}}, {{hq_location}}).
+Your task: Generate 5 targeted search queries to find social media content and digital presence for {{company}} ({{industry}}, {{hq_location}}).
 Company website: {{company_url}}
 
 IMPORTANT: Use the company's domain name (e.g. "bol.com") or full company name in your queries to avoid matching unrelated accounts with similar short names. For example, search for "bol.com" instead of just "Bol" to find the actual company's social media presence.
 
 Focus areas for queries:
-1. Social media official accounts (LinkedIn, Twitter/X, Instagram, Facebook, TikTok, WeChat, Douyin)
+1. Social media official accounts (LinkedIn, Twitter/X， Instagram, Facebook)
 2. Recent social media posts or updates (last 3 months)
 3. Customer engagement and comments on social platforms
-4. Influencer mentions or partnerships
-5. Social media follower count, engagement rate, content strategy
-6. User reviews on social platforms or review sites
-7. Community discussions or forum mentions
-8. Viral content or trending topics related to {{company}}
+4. Social media follower count, engagement rate, content strategy
+5. User reviews on social platforms or review sites and Community discussions or forum mentions
 
 Examples of good queries:
 - "site:linkedin.com/company {{company}}"

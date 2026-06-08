@@ -211,7 +211,7 @@ class GroundingNode:
                             f"{focus_instructions}."
                         ),
                         max_depth=1, 
-                        max_breadth=50, 
+                        max_breadth=15, 
                         extract_depth="advanced"
                     )
                     

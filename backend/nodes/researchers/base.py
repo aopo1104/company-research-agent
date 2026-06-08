@@ -286,7 +286,7 @@ class BaseResearcher:
             if not queries:
                 raise ValueError(f"No queries generated for {company}")
 
-            queries = queries[:8]  # Limit to 8 queries
+            queries = queries[:5]  # Limit to 5 queries
             logger.info(f"Final queries for {self.analyst_type}: {queries}")
             
             yield {"type": "queries_complete", "queries": queries, "count": len(queries)}
