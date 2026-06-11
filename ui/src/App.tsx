@@ -833,8 +833,8 @@ function App() {
                 <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider">开发信</h2>
               </div>
 
-              {/* Email Generator - sticky on desktop */}
-              <div className="lg:sticky lg:top-6">
+              {/* Email Generator */}
+              <div>
                 {output && output.details && isComplete ? (
                   <EmailGenerator
                     reportContent={output.details.report || ''}

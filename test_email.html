@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>开发信生成测试</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; padding: 24px; }
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { margin-bottom: 16px; color: #333; }
+    .card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+    label { font-weight: 600; display: block; margin-bottom: 6px; color: #555; }
+    input[type="text"] { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+    textarea { width: 100%; height: 300px; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 13px; font-family: monospace; resize: vertical; }
+    button { background: #2563eb; color: #fff; border: none; padding: 10px 24px; border-radius: 6px; font-size: 15px; cursor: pointer; margin-top: 12px; }
+    button:hover { background: #1d4ed8; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .btn-copy { background: #059669; font-size: 13px; padding: 6px 16px; margin-top: 0; margin-left: 12px; }
+    .btn-copy:hover { background: #047857; }
+    .btn-copy.copied { background: #6b7280; }
+    .result { margin-top: 20px; }
+    .result h2 { margin-bottom: 12px; color: #333; }
+    .subject { font-size: 16px; font-weight: 600; color: #1e40af; margin-bottom: 8px; }
+    .alt-subjects { margin: 8px 0 16px; padding-left: 20px; }
+    .alt-subjects li { color: #555; margin-bottom: 4px; }
+    .email-body { background: #ffffff; padding: 28px 32px; border-radius: 8px; border: 1px solid #e2e8f0; line-height: 1.9; font-size: 14.5px; color: #1a1a1a; font-family: 'Georgia', 'Times New Roman', serif; }
+    .email-body strong { font-weight: 700; color: #111827; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .email-body ul, .email-body ol { padding-left: 20px; margin: 10px 0; }
+    .email-body li { margin-bottom: 6px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13.5px; color: #374151; }
+    .email-body img { max-width: 480px; height: auto; border-radius: 8px; margin: 16px 0; display: block; border: 1px solid #e5e7eb; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .email-body p { margin-bottom: 12px; }
+    .email-body p:first-child { font-size: 15px; }
+    .meta { margin-top: 12px; font-size: 13px; color: #666; }
+    .meta span { display: inline-block; background: #e0e7ff; padding: 2px 8px; border-radius: 4px; margin-right: 8px; }
+    .error { color: #dc2626; font-weight: 600; }
+    .loading { color: #6b7280; font-style: italic; }
+  </style>
+  <!-- Markdown 渲染库 -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <div class="container">
+    <h1>📧 开发信生成测试</h1>
+
+    <div class="card">
+      <label for="companyName">公司名称</label>
+      <input type="text" id="companyName" value="Mobidecor" />
+    </div>
+
+    <div class="card">
+      <label for="apiUrl">API 地址</label>
+      <input type="text" id="apiUrl" value="http://localhost:9999/generate-email" />
+    </div>
+
+    <div class="card">
+      <label for="report">研究报告内容</label>
+      <textarea id="report"></textarea>
+    </div>
+
+    <button id="btnGenerate" onclick="generateEmail()">生成开发信</button>
+
+    <div class="result" id="result" style="display:none;"></div>
+  </div>
+
+  <script>
+    // 预填报告
+    const DEFAULT_REPORT = `# Mobidecor 研究报告
+
+## 公司概况
+Mobidecor是一家专注于设计、制造和销售家具的公司，致力于为教育机构、图书馆、公共场所和住宿空间等提供高质量的家具解决方案。
+公司旗下拥有七个历史悠久的品牌（如Simire、Souvignet等），展示了其在家具制造领域的深厚经验和专业能力。
+Mobidecor的生产设施包括一座5000平方米的工厂，配备数控设备，所有产品均在法国生产，符合严格的质量和环保标准。
+
+## 核心产品与服务
+Mobidecor的核心产品类别包括桌椅、书架、储物柜、图书馆家具、学校家具、办公家具、餐饮家具以及定制家具。
+其旗舰产品包括：
+- **Chaise Rond'o**：抗噪音设计，适合教室使用。
+- **Chaise Tempo**：市场上最轻的椅子，减少员工的肌肉骨骼问题。
+- **QBS系列信息化家具**：如FORMAT+和PLUG-IN桌子，专为教育和数字化学习设计。
+
+Mobidecor还提供定制家具和室内装饰服务，具备OEM/ODM能力。其产品采用环保技术（如Blueprotech®涂层技术），减少挥发性有机化合物（COV）排放。
+
+## 商业模式与目标市场
+Mobidecor是一家集设计、制造、分销和销售为一体的混合型家具公司。
+其目标市场包括：
+- 教育机构（学校、大学）
+- 图书馆和媒体中心
+- 公共空间（如会议室、餐厅、剧院等）
+- 医疗和社会服务机构
+
+Mobidecor通过解决用户痛点（如噪音问题、空气质量和人体工学问题）来满足客户需求。例如，抗噪音家具（如Chaise Rond'o）和轻量化设计（如Chaise Tempo）专为教育和公共空间设计。
+
+## 市场竞争格局
+Mobidecor旗下品牌Simire自1946年成立以来，已成为法国家具制造领域的标杆。
+QBS被誉为法国信息化家具市场的领导者，尤其是在教育领域的数字化培训家具方面表现突出。
+Mobidecor的"法国制造"标签和环保承诺是其市场竞争中的重要优势，吸引注重品质和可持续发展的客户群体。
+
+## 近期动态
+- 2021年，Mobidecor收购了QBS，扩展了其在信息化家具领域的业务。
+- 2021年，Mobidecor收购了Ageco Agencement，新增了定制化室内设计服务。
+- 2024年，Borgeaud Bibliothèques将推出Harmony系列书架，适用于图书馆、媒体中心和CDI等场所。
+
+## 最近社媒动态
+Mobidecor的LinkedIn账号拥有2,008名粉丝。
+最近3个月的动态包括：
+- 发布2026年新年祝福，强调库存产品的可用性和网站服务的改进。
+- 宣布将关键产品的交付时间从6-8周缩短至15天，并计划在2026年初提供800种库存产品。
+- 参加Educatech One to One Expo展会，展示其解决方案和重新设计的网站功能。
+
+## 推广与合作机会分析
+
+### 产品匹配度评估
+- **用户需求**：Mobidecor的目标市场（教育机构、图书馆、公共空间等）对人体工学家具和环保产品有明确需求，这与乐歌股份的产品线（如电动升降桌、办公椅等）高度契合。
+- **重叠品类**：Mobidecor销售办公家具和学校家具，这些品类与乐歌的电动升降桌、办公椅等产品切入最自然。
+
+### 合作切入点
+- **零售商/电商平台**：Mobidecor的销售渠道包括官网和在线目录，乐歌可作为第三方卖家入驻其平台，优先推广办公家具和学校家具。
+- **品牌商/制造商**：Mobidecor具备OEM/ODM能力，乐歌可提供升降机芯或白牌产品，与其定制家具业务合作。
+- **分销商/代理商**：Mobidecor在教育和公共空间领域的专业能力使其成为区域独家代理乐歌产品线的潜在合作伙伴。
+
+### 乐歌行动建议（总结）
+1. 建议1：与Mobidecor合作推广人体工学办公家具
+2. 建议2：提供升降机芯或白牌产品进行OEM合作
+3. 建议3：利用2024年Harmony系列书架的推广时机`;
+
+    document.getElementById('report').value = DEFAULT_REPORT;
+
+    async function generateEmail() {
+      const btn = document.getElementById('btnGenerate');
+      const resultDiv = document.getElementById('result');
+      const apiUrl = document.getElementById('apiUrl').value.trim();
+      const companyName = document.getElementById('companyName').value.trim();
+      const reportContent = document.getElementById('report').value.trim();
+
+      if (!reportContent) { alert('请填写报告内容'); return; }
+
+      btn.disabled = true;
+      btn.textContent = '生成中...';
+      resultDiv.style.display = 'block';
+      resultDiv.innerHTML = '<p class="loading">⏳ 正在调用 LLM 生成开发信，请稍候...</p>';
+
+      try {
+        const resp = await fetch(apiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ report_content: reportContent, company_name: companyName })
+        });
+
+        if (!resp.ok) {
+          const err = await resp.text();
+          throw new Error(`HTTP ${resp.status}: ${err}`);
+        }
+
+        const data = await resp.json();
+        renderResult(data);
+      } catch (e) {
+        resultDiv.innerHTML = `<p class="error">❌ 错误: ${e.message}</p>`;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '生成开发信';
+      }
+    }
+
+    function renderResult(data) {
+      const resultDiv = document.getElementById('result');
+      let altHtml = '';
+      if (data.subjectAlternatives && data.subjectAlternatives.length > 0) {
+        altHtml = `<ul class="alt-subjects">${data.subjectAlternatives.map(s => `<li>${s}</li>`).join('')}</ul>`;
+      }
+
+      // 推荐品类标签
+      let catHtml = '';
+      if (data.recommendedCategories && data.recommendedCategories.length > 0) {
+        catHtml = `<div class="meta" style="margin-bottom:12px;"><strong>推荐品类:</strong> ${data.recommendedCategories.map(c => `<span>${c}</span>`).join('')}</div>`;
+      }
+
+      // 推荐理由
+      let reasonHtml = '';
+      if (data.recommendationReason) {
+        reasonHtml = `<div style="margin:12px 0;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:13px;color:#166534;line-height:1.6;"><strong>💡 推荐理由:</strong> ${data.recommendationReason}</div>`;
+      }
+
+      // 产品卡片
+      let productsHtml = '';
+      if (data.products && data.products.length > 0) {
+        productsHtml = `<div style="margin:16px 0;"><label>匹配产品:</label><div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;margin-top:8px;">` +
+          data.products.map(p => `
+            <div style="border:1px solid #e5e7eb;border-radius:8px;padding:12px;display:flex;gap:10px;align-items:center;background:#f9fafb;">
+              <img src="${p.image_url || ''}" alt="${p.product_name}" style="width:64px;height:64px;object-fit:contain;border-radius:4px;background:#fff;border:1px solid #eee;" onerror="this.style.display='none'" />
+              <div style="font-size:13px;">
+                <strong>${p.product_name}</strong> <code style="font-size:11px;background:#e0e7ff;padding:1px 4px;border-radius:3px;">${p.sku}</code><br/>
+                <span style="color:#555;">${(p.advantages || '').replace(/\n/g, ' • ')}</span><br/>
+                <span style="color:#888;font-size:12px;">Colors: ${p.available_colors || 'N/A'}</span>
+              </div>
+            </div>`).join('') +
+          `</div></div>`;
+      }
+
+      // 用 marked.js 把 Markdown 渲染成 HTML
+      const bodyHtml = marked.parse(data.body || '');
+
+      resultDiv.innerHTML = `
+        <div class="card">
+          <h2>✉️ 生成结果</h2>
+          ${catHtml}
+          ${reasonHtml}
+          <p class="subject">主标题: ${data.subject || '(无)'}</p>
+          ${altHtml ? `<label>备选标题:</label>${altHtml}` : ''}
+          ${productsHtml}
+          <div style="display:flex;align-items:center;margin-bottom:8px;">
+            <label style="margin-bottom:0;">邮件正文预览:</label>
+            <button class="btn-copy" onclick="copyEmailRich()">📋 复制（含格式和图片）</button>
+          </div>
+          <div class="email-body" id="emailBodyRendered">${bodyHtml}</div>
+          <div class="meta">
+            ${data.targetAudience ? `<span>目标受众: ${data.targetAudience}</span>` : ''}
+            ${data.outreachAngle ? `<span>切入角度: ${data.outreachAngle}</span>` : ''}
+          </div>
+        </div>
+        <div class="card">
+          <label>原始 Markdown:</label>
+          <textarea style="height:200px">${data.body || ''}</textarea>
+        </div>
+        <div class="card">
+          <label>原始 JSON:</label>
+          <textarea style="height:200px">${JSON.stringify(data, null, 2)}</textarea>
+        </div>
+      `;
+    }
+
+    // 富文本复制：复制渲染后的 HTML（含格式、图片）
+    async function copyEmailRich() {
+      const el = document.getElementById('emailBodyRendered');
+      if (!el) return;
+
+      try {
+        // 克隆内容并给图片加上 inline 尺寸限制（粘贴到其他系统时不会过大）
+        const clone = el.cloneNode(true);
+        clone.querySelectorAll('img').forEach(img => {
+          img.setAttribute('width', '420');
+          img.style.maxWidth = '420px';
+          img.style.height = 'auto';
+        });
+        const htmlContent = clone.innerHTML;
+        const plainContent = el.innerText;
+        const blob = new Blob([htmlContent], { type: 'text/html' });
+        const plainBlob = new Blob([plainContent], { type: 'text/plain' });
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': blob,
+            'text/plain': plainBlob,
+          })
+        ]);
+        // 按钮反馈
+        const btn = document.querySelector('.btn-copy');
+        btn.textContent = '✅ 已复制';
+        btn.classList.add('copied');
+        setTimeout(() => { btn.textContent = '📋 复制（含格式和图片）'; btn.classList.remove('copied'); }, 2000);
+      } catch (e) {
+        // 降级：选中文本让用户手动复制
+        const range = document.createRange();
+        range.selectNodeContents(el);
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+        alert('已选中内容，请按 Ctrl+C 手动复制');
+      }
+    }
+  </script>
+</body>
+</html>

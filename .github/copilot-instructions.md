@@ -46,7 +46,7 @@ ui/src/                           # React 前端
 5. **编辑 `scrape_engine.py` 时注意 DomainCircuitBreaker 的路径粒度**：跳过 locale 段（nl/be/en/fr），用首个有意义路径分组。
 6. **SSE 事件流格式必须保持兼容**：前端依赖 `research_init` / `progress` / `scrape_source` / `complete` 事件类型。
 7. **涉及工作流框架改动**（新增/删除节点、修改数据流、调整阶段顺序等）时，必须同步更新 `RESEARCH_PIPELINE.md`。
-8. **代码改动完成后，提示用户重启相关服务**：后端改动重启 `python application.py`，前端改动重启 `npm run dev`（修改 prompt 文件除外，见规则4）。
+8. **代码改动完成后，默认执行并提示重启相关服务**：后端改动重启 `python application.py`，前端改动重启 `npm run dev`（修改 prompt 文件除外，见规则4）。
 9. **任何代码改动导致与项目文档不一致时，必须同步更新相关文档**（包括本文件、`RESEARCH_PIPELINE.md`、`docs/` 下文档等）。
 
 ### 禁止事项
@@ -62,6 +62,12 @@ ui/src/                           # React 前端
 - 前端: 函数式组件、TypeScript 严格模式、Tailwind utility class
 - 注释语言: 代码注释用中文，docstring 用英文
 - Prompt 内容: 中文输出要求，英文指令
+
+### 数据库变更
+
+- **每次生成 SQL（建表、插入数据、变更结构等）必须新建一个独立文件**，存放在 `db/migrations/` 目录下。
+- **文件命名格式**：`YYYYMMDD_HHmmss_<描述>.sql`，例如 `20260609_163942_product_catalog.sql`。
+- `db/mysql_schema.sql` 仅作为完整 schema 参考，新增变更不要只改这个文件，必须同时在 `db/migrations/` 下留存独立迁移文件。
 
 ## 运行方式
 

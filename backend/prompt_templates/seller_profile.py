@@ -17,6 +17,10 @@ SELLER_WEBSITE = "www.loctekmotion.com"
 SELLER_DESCRIPTION_EN = "a Chinese ergonomic lifting product manufacturer"
 SELLER_DESCRIPTION_ZH = "中国人体工学升降产品制造商"
 
+# 销售代表姓名（用于开发信签名和自我介绍）
+SELLER_REP_NAME = "Kimi"
+SELLER_REP_TITLE = "Sales Manager"
+
 # ============================================================
 # 制造与市场定位
 # ============================================================
@@ -29,6 +33,24 @@ SELLER_CERTIFICATIONS = "UL, BIFMA, CE"
 # ============================================================
 # 产品线（中英文）
 # ============================================================
+
+# 品类枚举（与数据库 product_catalog.category ENUM 保持一致）
+PRODUCT_CATEGORIES = {
+    "linear_actuator": "线性驱动 / Linear Actuator",
+    "tv_mount": "电视支架 / TV Mount",
+    "electric_sofa": "电动沙发 / Electric Sofa",
+    "electric_bed": "电动床 / Electric Bed",
+    "chair": "椅子 / Chair",
+    "monitor_stand": "显示器支架 / Monitor Stand",
+    "standing_desk": "升降台 / Standing Desk",
+    "other": "其它 / Other",
+    "fitness_equipment": "健身器材 / Fitness Equipment",
+    "meeting_pod": "会议舱 / Meeting Pod",
+}
+
+# 供 prompt 使用的品类列表字符串
+PRODUCT_CATEGORIES_EN = ", ".join(PRODUCT_CATEGORIES.keys())
+
 SELLER_PRODUCTS_EN = [
     "Standing Desk / Desk Frames（电动升降桌）",
     "TV Mount（电视支架）",

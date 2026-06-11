@@ -33,8 +33,9 @@ from .queries import (
     SOCIAL_MEDIA_ANALYZER_QUERY_PROMPT,
 )
 
-from .email_outreach import EMAIL_GENERATION_SYSTEM_PROMPT
+from .email_outreach import EMAIL_GENERATION_SYSTEM_PROMPT, EMAIL_CATEGORY_INFERENCE_PROMPT
 from .quick_research import QUICK_RESEARCH_SYSTEM_PROMPT
+from .seller_profile import PRODUCT_CATEGORIES
 
 __all__ = [
     # Briefings
@@ -55,5 +56,7 @@ __all__ = [
     "SOCIAL_MEDIA_ANALYZER_QUERY_PROMPT",
     # Standalone
     "EMAIL_GENERATION_SYSTEM_PROMPT",
+    "EMAIL_CATEGORY_INFERENCE_PROMPT",
     "QUICK_RESEARCH_SYSTEM_PROMPT",
+    "PRODUCT_CATEGORIES",
 ]

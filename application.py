@@ -18,7 +18,7 @@ from backend.graph import Graph
 from backend.services.mongodb import MongoDBService
 from backend.services.pdf_service import PDFService
 from backend.classes.state import job_status
-from backend.prompt_templates import EMAIL_GENERATION_SYSTEM_PROMPT, QUICK_RESEARCH_SYSTEM_PROMPT
+from backend.prompt_templates import EMAIL_GENERATION_SYSTEM_PROMPT, EMAIL_CATEGORY_INFERENCE_PROMPT, QUICK_RESEARCH_SYSTEM_PROMPT
 
 try:
     from backend.services.mysql_service import MySQLService
@@ -569,9 +569,9 @@ class EmailGenerationRequest(BaseModel):
 
 @app.post("/generate-email")
 async def generate_email(data: EmailGenerationRequest):
-    """Generate a B2B outreach email based on research report."""
+    """Generate a B2B outreach email based on research report (two-step: infer category → fetch products → compose)."""
     from langchain_openai import AzureChatOpenAI
-    from langchain_core.output_parsers import StrOutputParser
+    import re
 
     try:
         azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
@@ -598,23 +598,83 @@ async def generate_email(data: EmailGenerationRequest):
             temperature=0.7,
         )
 
-        system_prompt = EMAIL_GENERATION_SYSTEM_PROMPT
+        report_text = data.report_content[:8000]
+        company_label = data.company_name or "the target company"
 
-        user_message = f"Based on the following research report about {data.company_name or 'the target company'}, generate a personalized B2B outreach email.\n\nResearch Report:\n{data.report_content[:8000]}"
+        # ── Step 1: 查询数据库中有货的品类，告诉 LLM 只从这些里选 ──
+        available_cats = []
+        if mysql_service:
+            available_cats = await mysql_service.get_available_categories()
+
+        if available_cats:
+            cat_hint = f"\n\nNOTE: Only these categories currently have products in stock: {', '.join(available_cats)}. Prefer picking from these."
+        else:
+            cat_hint = ""
+
+        category_messages = [
+            {"role": "system", "content": EMAIL_CATEGORY_INFERENCE_PROMPT},
+            {"role": "user", "content": f"Research Report about {company_label}:\n\n{report_text}{cat_hint}"}
+        ]
+        cat_result = await llm.ainvoke(category_messages)
+        cat_text = cat_result.content.strip()
+
+        # 解析品类数组
+        cat_match = re.search(r'\[[\s\S]*?\]', cat_text)
+        categories = json.loads(cat_match.group()) if cat_match else ["standing_desk"]
+        logger.info(f"[Email] Inferred categories for {company_label}: {categories}")
+
+        # ── Step 2: 从数据库查询对应产品（含兜底） ──
+        products = []
+        if mysql_service:
+            products = await mysql_service.get_products_by_categories(categories, limit=1)
+            # 兜底：如果推断的品类没匹配到产品，返回所有在售产品
+            if not products:
+                logger.info(f"[Email] No products found for {categories}, falling back to all active products")
+                products = await mysql_service.get_all_active_products(limit=1)
+
+        # 构建产品信息文本（只推荐1个产品）
+        if products:
+            p = products[0]
+            advantages_formatted = (p['advantages'] or 'N/A').replace('\n', ' • ')
+            product_info = (
+                "RECOMMENDED PRODUCT — you MUST include this product with its image in the email:\n\n"
+                f"  SKU: {p['sku']}\n"
+                f"  Name: {p['product_name']}\n"
+                f"  Image URL: {p['image_url'] or 'N/A'}\n"
+                f"  Key Advantages: {advantages_formatted}\n"
+            )
+        else:
+            product_info = "(No product data available in database — generate email without product recommendation.)"
+
+        # ── Step 3: 生成开发信 ──
+        user_message = (
+            f"Target company: {company_label}\n\n"
+            f"Research Report:\n{report_text}\n\n"
+            f"{product_info}"
+        )
 
         messages = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": EMAIL_GENERATION_SYSTEM_PROMPT},
             {"role": "user", "content": user_message}
         ]
 
         result = await llm.ainvoke(messages)
         result_text = result.content
+        logger.info(f"[Email] LLM raw response length: {len(result_text)}")
 
-        # Parse JSON from response
-        import re
-        json_match = re.search(r'\{[\s\S]*\}', result_text)
+        # 解析 JSON（先去掉 markdown 代码围栏，再修复双花括号）
+        cleaned = re.sub(r'^```(?:json)?\s*', '', result_text.strip())
+        cleaned = re.sub(r'\s*```$', '', cleaned)
+        # LLM 有时输出 {{ }} 而非 { }，修复为合法 JSON
+        cleaned = cleaned.replace('{{', '{').replace('}}', '}')
+
+        json_match = re.search(r'\{[\s\S]*\}', cleaned)
         if json_match:
             email_data = json.loads(json_match.group())
+
+            # 附加产品数据到响应（供前端展示）
+            email_data["products"] = products
+            email_data["recommendedCategories"] = categories
 
             # MySQL: 保存开发信
             if mysql_service:
@@ -627,10 +687,11 @@ async def generate_email(data: EmailGenerationRequest):
 
             return JSONResponse(content=email_data)
         else:
+            logger.error(f"[Email] LLM response not valid JSON. Raw: {result_text[:500]}")
             raise ValueError("LLM did not return valid JSON")
 
     except json.JSONDecodeError as e:
-        logger.error(f"Email generation JSON parse failed: {e}")
+        logger.error(f"Email generation JSON parse failed: {e}\nRaw text: {result_text[:500] if 'result_text' in dir() else 'N/A'}")
         raise HTTPException(status_code=500, detail="Failed to parse email response")
     except Exception as e:
         logger.error(f"Email generation failed: {e}")

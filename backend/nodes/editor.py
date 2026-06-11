@@ -195,7 +195,9 @@ class Editor:
         return False
 
     # Sections where grounding gate is relaxed (keep all content from briefings)
-    _RELAXED_SECTIONS = {"最近社媒动态"}
+    # 推广与合作机会分析: Editor 综合生成的分析章节，本质是推断/综合，不会逐句匹配简报原文，
+    # 不能用 grounding gate 删减，否则完成后该章节内容会丢失。
+    _RELAXED_SECTIONS = {"最近社媒动态", "推广与合作机会分析"}
 
     def _enforce_cited_and_supported_content(self, report_body: str, briefings: Dict[str, str]) -> str:
         """Gate: keep headings, cited lines, and short connective text between cited content."""

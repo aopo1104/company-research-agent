@@ -1,10 +1,20 @@
 import { useState } from 'react';
 import { Mail, Loader2, Copy, Check, RefreshCw, Send } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface EmailGeneratorProps {
   reportContent: string;
   companyName: string;
   isResetting: boolean;
+}
+
+interface EmailProduct {
+  sku: string;
+  product_name: string;
+  image_url?: string;
+  advantages?: string;
+  available_colors?: string;
 }
 
 interface GeneratedEmail {
@@ -13,6 +23,9 @@ interface GeneratedEmail {
   subjectAlternatives: string[];
   targetAudience: string;
   outreachAngle: string;
+  recommendationReason?: string;
+  recommendedCategories?: string[];
+  products?: EmailProduct[];
 }
 
 const API_URL = import.meta.env.VITE_API_URL || '/companyResearchAPI';
@@ -67,7 +80,23 @@ const EmailGenerator = ({ reportContent, companyName, isResetting }: EmailGenera
   const copyBody = async () => {
     if (!email) return;
     try {
-      await navigator.clipboard.writeText(email.body);
+      // 获取渲染后的 HTML，给图片加上尺寸限制
+      const bodyEl = document.getElementById('email-body-rendered');
+      if (bodyEl) {
+        const clone = bodyEl.cloneNode(true) as HTMLElement;
+        clone.querySelectorAll('img').forEach(img => {
+          img.setAttribute('width', '420');
+          (img as HTMLElement).style.maxWidth = '420px';
+          (img as HTMLElement).style.height = 'auto';
+        });
+        const htmlBlob = new Blob([clone.innerHTML], { type: 'text/html' });
+        const textBlob = new Blob([email.body], { type: 'text/plain' });
+        await navigator.clipboard.write([
+          new ClipboardItem({ 'text/html': htmlBlob, 'text/plain': textBlob })
+        ]);
+      } else {
+        await navigator.clipboard.writeText(email.body);
+      }
       setIsCopiedBody(true);
       setTimeout(() => setIsCopiedBody(false), 2000);
     } catch {
@@ -138,7 +167,53 @@ const EmailGenerator = ({ reportContent, companyName, isResetting }: EmailGenera
                 💡 角度: {email.outreachAngle}
               </span>
             )}
+            {email.recommendedCategories && email.recommendedCategories.length > 0 && (
+              <>
+                <span className="text-xs text-gray-400 self-center">推荐品类:</span>
+                {email.recommendedCategories.map((cat, i) => (
+                  <span key={i} className="inline-flex items-center px-3 py-1.5 bg-indigo-50 border border-indigo-200 rounded-lg text-xs font-medium text-indigo-700">
+                    {cat}
+                  </span>
+                ))}
+              </>
+            )}
           </div>
+
+          {/* Recommendation Reason */}
+          {email.recommendationReason && (
+            <div className="px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-800 leading-relaxed">
+              <span className="font-semibold">💡 推荐理由：</span>
+              {email.recommendationReason}
+            </div>
+          )}
+
+          {/* Matched Products */}
+          {email.products && email.products.length > 0 && (
+            <div>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">匹配产品</span>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2 mt-2">
+                {email.products.map((p, i) => (
+                  <div key={i} className="border border-gray-200 rounded-lg p-2 bg-gray-50 flex flex-col items-center text-center">
+                    {p.image_url && (
+                      <img
+                        src={p.image_url}
+                        alt={p.product_name}
+                        className="w-12 h-12 object-contain rounded-md bg-white border border-gray-200 mb-1.5 flex-shrink-0"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold text-gray-900 line-clamp-2">{p.product_name}</div>
+                      <code className="text-[10px] bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded inline-block mt-0.5">{p.sku}</code>
+                      {p.advantages && (
+                        <p className="text-gray-600 text-[10px] mt-0.5 line-clamp-2">{p.advantages.split('\n')[0]}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Subject Line */}
           <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
@@ -180,9 +255,11 @@ const EmailGenerator = ({ reportContent, companyName, isResetting }: EmailGenera
                 {isCopiedBody ? '已复制' : '复制正文'}
               </button>
             </div>
-            <pre className="whitespace-pre-wrap text-sm text-gray-800 font-sans leading-7">
-              {email.body}
-            </pre>
+            <div id="email-body-rendered" className="prose prose-sm max-w-none text-gray-800 leading-8 font-serif [&_img]:max-w-[320px] [&_img]:h-auto [&_img]:rounded-lg [&_img]:border [&_img]:border-gray-200 [&_img]:shadow-sm [&_strong]:font-sans [&_strong]:font-bold [&_li]:font-sans [&_li]:text-sm [&_li]:text-gray-600">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {email.body}
+              </ReactMarkdown>
+            </div>
           </div>
         </div>
       )}

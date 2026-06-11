@@ -110,3 +110,69 @@ class MySQLService:
                     )
         except Exception as e:
             logger.error(f"[MySQL] save_email failed: {e}")
+
+    async def get_products_by_categories(
+        self,
+        categories: list[str],
+        limit: int = 6,
+    ) -> list[Dict[str, Any]]:
+        """根据品类列表查询在售产品，返回推荐产品信息。"""
+        if not self._pool or not categories:
+            return []
+        try:
+            # 参数化查询防止注入
+            placeholders = ",".join(["%s"] * len(categories))
+            sql = (
+                f"SELECT sku, category, product_name, image_url, advantages, available_colors "
+                f"FROM product_catalog "
+                f"WHERE is_active = 1 AND category IN ({placeholders}) "
+                f"ORDER BY FIELD(category, {placeholders}), tier DESC "
+                f"LIMIT %s"
+            )
+            params = tuple(categories) + tuple(categories) + (limit,)
+            async with self._pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cur:
+                    await cur.execute(sql, params)
+                    rows = await cur.fetchall()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"[MySQL] get_products_by_categories failed: {e}")
+            return []
+
+    async def get_all_active_products(self, limit: int = 6) -> list[Dict[str, Any]]:
+        """查询所有在售产品（兜底用）。"""
+        if not self._pool:
+            return []
+        try:
+            sql = (
+                "SELECT sku, category, product_name, image_url, advantages, available_colors "
+                "FROM product_catalog "
+                "WHERE is_active = 1 "
+                "ORDER BY tier DESC "
+                "LIMIT %s"
+            )
+            async with self._pool.acquire() as conn:
+                async with conn.cursor(aiomysql.DictCursor) as cur:
+                    await cur.execute(sql, (limit,))
+                    rows = await cur.fetchall()
+            return [dict(row) for row in rows]
+        except Exception as e:
+            logger.error(f"[MySQL] get_all_active_products failed: {e}")
+            return []
+
+    async def get_available_categories(self) -> list[str]:
+        """查询数据库中实际有在售产品的品类列表。"""
+        if not self._pool:
+            return []
+        try:
+            sql = (
+                "SELECT DISTINCT category FROM product_catalog WHERE is_active = 1 ORDER BY category"
+            )
+            async with self._pool.acquire() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(sql)
+                    rows = await cur.fetchall()
+            return [row[0] for row in rows]
+        except Exception as e:
+            logger.error(f"[MySQL] get_available_categories failed: {e}")
+            return []
